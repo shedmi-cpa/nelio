@@ -1,12 +1,15 @@
 /**
  * Nelio · server · Google Apps Script, bound to the "Nelio – נתונים" spreadsheet.
  *
- * The skeleton (stage 3):
- *   setup()   Run from the editor after a change in the tabs. Creates what is missing: tabs,
- *             columns, settings, the Drive root folder and the test clients. Safe to run again.
+ * The files of the server:
+ *   Code.gs      The API of the client page, and the shared helpers (this file).
+ *   Setup.gs     The 13 tabs of data-model.md and their default rows. setup() runs from the editor.
+ *   Messages.gs  The templates of the messages, and how a message is written from a template.
+ *   Seed.gs      The demo office (D36, D37): seedDemo() runs from the editor.
+ *
  *   doGet()   Health check. Opening the web app address in a browser shows that the server is up.
- *   doPost()  The API of the client page: "hello" checks the link, "upload" saves one file
- *             in the client's folder for the month, and records it in the sheet.
+ *   doPost()  The API of the client page: "hello" checks the link and says which month is open,
+ *             "upload" saves one file in the client's folder for the month and records it.
  *   onEdit()  Runs by itself when someone edits the sheet, so the server forgets old copies.
  *
  * The source of truth is apps-script/ in github.com/shedmi-cpa/nelio.
@@ -21,11 +24,12 @@
 // ============================================================
 
 const CONFIG = {
-  version: '0.2.1',
+  version: '0.3.0',
   officeEmail: 'shedmi.cpa@gmail.com',   // setup() refuses to run from any other account
   timeZone: 'Asia/Jerusalem',
   clientPageUrl: 'https://shedmi-cpa.github.io/nelio/',
   rootFolderName: 'שדמי – מסמכי לקוחות',
+  rejectedFolderName: 'נדחו',            // D31: a rejected file moves here, inside the month folder
   defaultMaxFileMb: 10,                  // D32: covers real documents, and uploads stay far from the page's time limit
   lockTimeoutMs: 30000,
   cacheSeconds: 600,                     // 10 minutes (D29)
@@ -33,7 +37,12 @@ const CONFIG = {
 
 // Israeli format, 24-hour clock (rules.md). The same format, spelled for two tools:
 const SHEET_DATETIME_FORMAT = 'dd/mm/yyyy hh:mm:ss';  // Google Sheets number format
+const SHEET_DATE_FORMAT = 'dd/mm/yyyy';
 const TEXT_DATETIME_FORMAT = 'dd/MM/yyyy HH:mm:ss';   // Utilities.formatDate
+const TEXT_DATE_FORMAT = 'dd/MM/yyyy';
+
+const MONTHS_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט',
+  'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 
 // File types we accept: MIME type -> extension of the stored file.
 const ALLOWED_TYPES = {
@@ -51,20 +60,15 @@ const EXTENSION_TYPES = {
   heic: 'image/heic', heif: 'image/heif', pdf: 'application/pdf',
 };
 
-// Until the DocTypes tab exists (stage 4), every upload of the skeleton is "מסמך אחר".
-const SKELETON_DOC_TYPE = { id: 'OTHER', fileLabel: 'מסמך-אחר' };
-
-// Two test clients until stage 4 brings the 60 invented clients. Their links are in Settings.
-// The second has ' and " in its name, to test names in Drive with real uploads.
-const TEST_CLIENTS = [
-  { clientId: 'TEST', businessName: 'לקוח בדיקה', linkSetting: 'test_link' },
-  { clientId: 'T2', businessName: 'ג\'ו שיפוצים בע"מ', linkSetting: 'test_link_2' },
-];
+// Until the full client page of stage 5 lets the client choose the type of each document,
+// every upload goes to the request's "מסמך אחר".
+const UPLOAD_DOC_TYPE = 'OTHER';
 
 // Everything the client may see is in Hebrew (rules.md).
 const MESSAGES = {
   badRequest: 'הבקשה לא תקינה.',
   badToken: 'הקישור הזה לא פעיל. לקבלת קישור חדש, פנו למשרד.',
+  noRequest: 'אין כרגע מסמכים להעלות.',
   noFile: 'לא התקבל קובץ. נסו שוב.',
   badType: 'סוג הקובץ לא נתמך. אפשר להעלות תמונה או קובץ PDF.',
   badFile: 'הקובץ הגיע פגום. נסו להעלות אותו שוב.',
@@ -73,228 +77,6 @@ const MESSAGES = {
   busy: 'המערכת עמוסה כרגע. נסו שוב בעוד רגע.',
   serverError: 'משהו השתבש אצלנו. נסו שוב בעוד כמה דקות.',
 };
-
-// The tabs used so far, in their order in the spreadsheet (the full model: data-model.md,
-// chapter 5). Each column: [name, Hebrew note shown on the header, format].
-// Formats: 'text' keeps the value exactly as written, 'datetime', 'number', 'checkbox'.
-const SCHEMA = {
-  Settings: [
-    ['key', 'שם ההגדרה. הקוד קורא אותו, ולכן לא משנים אותו', 'text'],
-    ['value', 'הערך', 'text'],
-    ['description', 'הסבר', 'text'],
-  ],
-  Clients: [
-    ['client_id', 'מזהה הלקוח. מופיע גם בשם התיקייה שלו ב-Drive', 'text'],
-    ['business_name', 'שם העסק (בדוי)', 'text'],
-    ['contact_name', 'איש הקשר', 'text'],
-    ['email', 'כתובת פלוס של חשבון המשרד (D12)', 'text'],
-    ['phone', 'טלפון בדוי בבירור', 'text'],
-    ['profile_id', 'סוג העסק, מהלשונית Profiles', 'text'],
-    ['has_employees', 'יש עובדים', 'checkbox'],
-    ['frequency', 'monthly (חודשי) או bimonthly (דו-חודשי)', 'text'],
-    ['legal_type', 'licensed (עוסק מורשה) או company (חברה בע״מ). לתצוגה בלבד', 'text'],
-    ['bookkeeper_id', 'מנהל החשבונות, מהלשונית Staff', 'text'],
-    ['token', 'הטוקן של הקישור האישי. סודי: לא מעתיקים אותו לשום מקום אחר', 'text'],
-    ['token_created_at', 'מתי נוצר הטוקן', 'datetime'],
-    ['active', 'פעיל. לקוח לא פעיל לא יכול להעלות', 'checkbox'],
-    ['drive_folder_id', 'התיקייה של הלקוח ב-Drive. נוצרת בהעלאה הראשונה', 'text'],
-    ['notes', 'הערות פנימיות של המשרד', 'text'],
-  ],
-  Uploads: [
-    ['upload_id', 'מזהה ההעלאה', 'text'],
-    ['uploaded_at', 'מתי הועלה', 'datetime'],
-    ['item_id', 'הפריט: סוג המסמך בבקשה', 'text'],
-    ['request_id', 'הבקשה: הלקוח בחודש', 'text'],
-    ['client_id', 'הלקוח', 'text'],
-    ['uploaded_by', 'מי העלה: client, מזהה של איש צוות, או demo', 'text'],
-    ['original_name', 'שם הקובץ בטלפון', 'text'],
-    ['stored_name', 'השם הקבוע ב-Drive (D31)', 'text'],
-    ['seq', 'המספר הרץ בשם הקובץ', 'number'],
-    ['drive_file_id', 'הקובץ ב-Drive', 'text'],
-    ['mime_type', 'סוג הקובץ', 'text'],
-    ['size_bytes', 'גודל בבתים', 'number'],
-    ['file_hash', 'טביעת האצבע של הקובץ (SHA-256)', 'text'],
-    ['duplicate_of', 'אם זה קובץ שכבר הועלה: ההעלאה הקודמת', 'text'],
-    ['upload_key', 'מזהה של ניסיון ההעלאה, נגד שמירה כפולה', 'text'],
-    ['status', 'active (פעיל) או rejected (נדחה)', 'text'],
-  ],
-  Log: [
-    ['at', 'מתי. במצב הדגמה: הזמן המדומה', 'datetime'],
-    ['real_at', 'מתי באמת', 'datetime'],
-    ['actor', 'מי: client:C07, staff:S2, system או demo', 'text'],
-    ['event', 'סוג האירוע', 'text'],
-    ['client_id', 'הלקוח', 'text'],
-    ['request_id', 'הבקשה', 'text'],
-    ['item_id', 'הפריט', 'text'],
-    ['details', 'פרטים', 'text'],
-  ],
-};
-
-// Settings rows that setup() adds when missing (the full list: data-model.md, "Settings").
-const DEFAULT_SETTINGS = [
-  ['office_name', "שדמי ושות', רואי חשבון", 'שם המשרד'],
-  ['system_name', 'Nelio', 'שם המערכת'],
-  ['office_email', CONFIG.officeEmail, 'הכתובת שממנה יוצאים המיילים'],
-  ['client_page_url', CONFIG.clientPageUrl, 'כתובת הדף של הלקוח. ממנה נבנה הקישור האישי'],
-  ['drive_root_folder_id', '', 'תיקיית השורש ב-Drive. נוצרת ב-setup'],
-  ['max_file_mb', String(CONFIG.defaultMaxFileMb), 'גודל מקסימלי לקובץ, במגה-בייט (D32)'],
-  ['test_link', '', 'הקישור של "לקוח בדיקה". יוחלף בקישורים האישיים של הלקוחות'],
-  ['test_link_2', '', 'הקישור של לקוח הבדיקה השני, עם גרש ומירכאות בשם'],
-];
-
-// The naming lab of stage 3.2 finished its job (D31). setup() moves its folder to the trash.
-const OLD_LAB_FOLDER_NAME = 'בדיקת שמות – שלב 3.2';
-
-// ============================================================
-// Setup (run from the editor)
-// ============================================================
-
-function setup() {
-  assertOfficeAccount_();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) {
-    throw new Error('הסקריפט לא מחובר לגיליון. פתחו אותו מתוך הגיליון: תוספים > Apps Script.');
-  }
-  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', ss.getId());
-  ss.setSpreadsheetTimeZone(CONFIG.timeZone);
-
-  Object.keys(SCHEMA).forEach(function (name) {
-    ensureSheet_(ss, name, SCHEMA[name]);
-  });
-  orderSheets_(ss);
-  removeEmptyExtraSheets_(ss);
-  ensureDefaultSettings_();
-
-  const root = ensureRootFolder_();
-  trashFolderByName_(root, OLD_LAB_FOLDER_NAME);
-  const links = ensureTestClients_();
-  forgetCached_('settings');
-  forgetCached_('clients');
-
-  logEvent_({ actor: 'system', event: 'setup', details: 'הגדרה הושלמה, גרסה ' + CONFIG.version });
-  ss.setActiveSheet(ss.getSheetByName('Settings'));
-  SpreadsheetApp.flush();
-
-  console.log('ההגדרה הושלמה. גרסה ' + CONFIG.version);
-  console.log('תיקיית השורש ב-Drive: ' + root.getUrl());
-  links.forEach(function (line) { console.log(line); });
-}
-
-function assertOfficeAccount_() {
-  const me = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
-  if (me && me !== CONFIG.officeEmail) {
-    throw new Error('הסקריפט רץ מהחשבון ' + me + ' ולא מחשבון המשרד (' + CONFIG.officeEmail +
-      '). פתחו את הגיליון בחשבון המשרד והריצו שוב.');
-  }
-}
-
-function ensureSheet_(ss, name, columns) {
-  let sheet = ss.getSheetByName(name);
-  if (!sheet) sheet = ss.insertSheet(name, ss.getNumSheets());
-  sheet.setRightToLeft(true);
-
-  // Add missing columns at the end. Never reorder or delete: the code finds columns by name.
-  const headers = readHeaderRow_(sheet);
-  columns.forEach(function (column) {
-    const columnName = column[0];
-    const note = column[1];
-    const format = column[2];
-    let index = headers.indexOf(columnName);
-    if (index === -1) {
-      headers.push(columnName);
-      index = headers.length - 1;
-      sheet.getRange(1, index + 1).setValue(columnName);
-    }
-    sheet.getRange(1, index + 1).setNote(note);
-    const rows = sheet.getMaxRows() - 1;
-    if (rows > 0) sheet.getRange(2, index + 1, rows, 1).setNumberFormat(numberFormat_(format));
-  });
-
-  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#eef1f5');
-  sheet.setFrozenRows(1);
-  forgetCached_('headers:' + name);
-}
-
-// The tabs in the order of SCHEMA (the order of data-model.md).
-function orderSheets_(ss) {
-  Object.keys(SCHEMA).forEach(function (name, i) {
-    const sheet = ss.getSheetByName(name);
-    if (!sheet) return;
-    ss.setActiveSheet(sheet);
-    ss.moveActiveSheet(i + 1);
-  });
-}
-
-// A new spreadsheet starts with an empty tab ("גיליון1" or "Sheet1"). Remove it.
-function removeEmptyExtraSheets_(ss) {
-  ss.getSheets().forEach(function (sheet) {
-    const isOurs = Object.prototype.hasOwnProperty.call(SCHEMA, sheet.getName());
-    const isEmpty = sheet.getLastRow() === 0 && sheet.getLastColumn() === 0;
-    if (!isOurs && isEmpty && ss.getSheets().length > 1) ss.deleteSheet(sheet);
-  });
-}
-
-function ensureDefaultSettings_() {
-  const existing = readTable_('Settings').map(function (row) { return String(row.key); });
-  DEFAULT_SETTINGS.forEach(function (setting) {
-    if (existing.indexOf(setting[0]) === -1) {
-      appendRow_('Settings', { key: setting[0], value: setting[1], description: setting[2] });
-    }
-  });
-  forgetCached_('settings');
-}
-
-function ensureRootFolder_() {
-  const id = getSetting_('drive_root_folder_id');
-  if (id) {
-    try {
-      const existing = DriveApp.getFolderById(id);
-      if (!existing.isTrashed()) return existing;
-    } catch (err) {
-      // The folder was deleted. A new one is created below.
-    }
-  }
-  const folder = DriveApp.createFolder(CONFIG.rootFolderName);
-  setSetting_('drive_root_folder_id', folder.getId());
-  return folder;
-}
-
-function trashFolderByName_(parent, name) {
-  const found = parent.getFoldersByName(name);
-  while (found.hasNext()) found.next().setTrashed(true);
-}
-
-// The test clients live in the Clients tab, like real clients. Their tokens are in that private
-// tab only, never in the code, so they never reach the public repo. "לקוח בדיקה" keeps the token
-// of stage 3.1, so the link saved then still works.
-function ensureTestClients_() {
-  const props = PropertiesService.getScriptProperties();
-  const existing = readTable_('Clients');
-  const lines = [];
-  TEST_CLIENTS.forEach(function (test) {
-    const row = existing.filter(function (r) { return String(r.client_id) === test.clientId; })[0];
-    let token = row ? String(row.token || '') : '';
-    if (!row) {
-      token = (test.clientId === 'TEST' && props.getProperty('TEST_TOKEN')) || newToken_();
-      appendRow_('Clients', {
-        client_id: test.clientId,
-        business_name: test.businessName,
-        has_employees: false,
-        frequency: 'monthly',
-        token: token,
-        token_created_at: now_(),
-        active: true,
-        notes: 'לקוח בדיקה של שלב השלד. הקישור שלו בלשונית Settings, בשורה ' + test.linkSetting,
-      });
-    }
-    const link = buildClientLink_(token);
-    setSetting_(test.linkSetting, link);
-    lines.push(test.businessName + ': ' + link);
-  });
-  props.deleteProperty('TEST_TOKEN');  // the token now lives in Clients
-  forgetCached_('clients');
-  return lines;
-}
 
 // ============================================================
 // Web app: health check and API
@@ -326,26 +108,38 @@ function doPost(e) {
   }
 }
 
-// The page calls this when it opens: is the link valid, and what should it show?
+// The page calls this when it opens: is the link valid, and which month should it show?
 function handleHello_(request, watch) {
   const client = findClientByToken_(request.token);
   if (!client) return fail_('BAD_TOKEN', MESSAGES.badToken);
   watch.lap('checks');
-  const officeName = getSetting_('office_name');
-  const maxFileMb = getMaxFileMb_();
-  watch.lap('settings');
-  return {
+  const found = findOpenRequest_(client);
+  watch.lap('cycle');
+  const answer = {
     ok: true,
     businessName: client.businessName,
-    officeName: officeName,
-    maxFileMb: maxFileMb,
+    officeName: getSetting_('office_name'),
+    maxFileMb: getMaxFileMb_(),
     version: CONFIG.version,
-    serverMs: watch.totalMs(),
-    timingText: formatLaps_(watch.laps()),
   };
+  watch.lap('settings');
+  if (found) {
+    answer.state = 'open';
+    answer.periodLabel = periodLabel_(found.req.period);   // "אוקטובר 2026"
+    answer.dueDate = found.cycle.dueDate ? formatDate_(new Date(found.cycle.dueDate)) : '';
+  } else {
+    // data-model.md 3.3: a client without a request in the open cycle, for example a
+    // bimonthly client in an odd month.
+    answer.state = 'noRequest';
+    answer.message = MESSAGES.noRequest + nextRequestText_();
+  }
+  answer.serverMs = watch.totalMs();
+  answer.timingText = formatLaps_(watch.laps());
+  return answer;
 }
 
-// Data model, chapter 2, steps 4-10 (the skeleton version).
+// Data model, chapter 2, steps 4-10. Until stage 5, the file goes to the request's
+// "מסמך אחר", which does not change the status of the request (data-model.md 3.1).
 // The stopwatch times each step (D29). The times reach the page and the Log tab.
 function handleUpload_(request, watch) {
   // Step 4: checks. If anything is wrong, nothing is saved.
@@ -365,6 +159,13 @@ function handleUpload_(request, watch) {
   if (sizeBytes > maxMb * 1024 * 1024) {
     return fail_('TOO_BIG', MESSAGES.tooBig.replace('{mb}', maxMb));
   }
+  const found = findOpenRequest_(client);
+  if (!found) return fail_('NO_REQUEST', MESSAGES.noRequest + nextRequestText_());
+  const docType = getDocTypes_()[UPLOAD_DOC_TYPE];
+  if (!docType) throw new Error('חסר סוג המסמך ' + UPLOAD_DOC_TYPE + ' בלשונית DocTypes. הריצו את setup.');
+  const cycleId = found.cycle.cycleId;
+  const req = found.req;
+  const itemId = req.requestId + '_' + UPLOAD_DOC_TYPE;
   watch.lap('checks');
 
   let blob;
@@ -377,33 +178,40 @@ function handleUpload_(request, watch) {
   const fileHash = sha256OfText_(data);
   watch.lap('hash');
 
-  const period = currentPeriod_();
-  const requestId = period + '_' + client.clientId;
-  const itemId = requestId + '_' + SKELETON_DOC_TYPE.id;
-
   // Step 5: one upload at a time, so two uploads never get the same number or row.
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(CONFIG.lockTimeoutMs)) return fail_('BUSY', MESSAGES.busy);
   watch.lap('lock');
   try {
+    const at = now_();
+    // The item's row holds the last number given to its files (Items.last_seq), so the number
+    // comes without searching Uploads (findings of stage 3.2).
+    const item = readItem_(cycleId, itemId);
+    if (!item) throw new Error('הפריט ' + itemId + ' לא נמצא בלשונית Items');
+    watch.lap('item');
+
     // Step 6: Drive. The client's folder and the month folder are created on the first upload,
     // and from then on found by their saved IDs (D29), never searched by name.
-    const at = now_();
-    const folder = getMonthFolder_(client, period, requestId);
+    const folder = getRequestFolder_(client, req, cycleId);
     watch.lap('folder');
-    const seq = nextSeq_(itemId);
-    const storedName = buildFileName_(client, period, SKELETON_DOC_TYPE.fileLabel, seq, ALLOWED_TYPES[mimeType]);
-    watch.lap('seq');
+    const seq = (Number(item.record.last_seq) || 0) + 1;
+    const storedName = buildFileName_(client, req.period, docType.fileLabel, seq, ALLOWED_TYPES[mimeType]);
     const file = folder.createFile(blob.setName(storedName));
     watch.lap('save');
 
-    // Step 7: a row in Uploads. (Items and the request status arrive in stage 5.)
+    // Step 7: the item, a row in Uploads, and the request's last activity.
+    item.record.status = 'received';
+    item.record.file_count = (Number(item.record.file_count) || 0) + 1;
+    item.record.updated_at = at;
+    item.record.updated_by = 'client';
+    item.record.last_seq = seq;
+    writeRecordAt_('Items', item.row, item.record);
     const uploadId = itemId + '_' + pad2_(seq);
     appendRow_('Uploads', {
       upload_id: uploadId,
       uploaded_at: at,
       item_id: itemId,
-      request_id: requestId,
+      request_id: req.requestId,
       client_id: client.clientId,
       uploaded_by: 'client',
       original_name: originalName,
@@ -417,13 +225,18 @@ function handleUpload_(request, watch) {
       status: 'active',
     });
     watch.lap('uploads');
+    updateRecord_('Requests', req.row, 'request_id', req.requestId, {
+      last_activity: 'העלה ' + docType.nameHe,
+      last_activity_at: at,
+    });
+    watch.lap('request');
 
     // Step 9: the log. Its row holds the times up to here (it cannot time its own writing).
     logEvent_({
       actor: 'client:' + client.clientId,
       event: 'upload',
       client_id: client.clientId,
-      request_id: requestId,
+      request_id: req.requestId,
       item_id: itemId,
       details: 'הועלה קובץ: ' + storedName + ' (' + formatSize_(sizeBytes) + '). ' +
         'זמנים בשרת: ' + formatLaps_(watch.laps()),
@@ -436,7 +249,7 @@ function handleUpload_(request, watch) {
       ok: true,
       uploadId: uploadId,
       storedName: storedName,
-      folderPath: clientFolderName_(client) + ' / ' + period,
+      folderPath: clientFolderName_(client) + ' / ' + req.period,
       mimeType: mimeType,
       sizeBytes: sizeBytes,
       receivedAt: formatDateTime_(at),
@@ -497,6 +310,141 @@ function isChecked_(value) {
 }
 
 // ============================================================
+// The month: cycles, requests and items (data-model.md, chapters 3 and 5)
+// ============================================================
+
+// The open cycle. There is at most one (data-model.md 3.3). { cycleId, dueDate } or null.
+function getOpenCycle_() {
+  const found = cached_('openCycle', function () {
+    const row = readTable_('Cycles').filter(function (r) { return String(r.status) === 'open'; })[0];
+    if (!row) return { none: true };
+    return {
+      cycleId: String(row.cycle_id),
+      dueDate: row.due_date instanceof Date ? row.due_date.getTime() : null,
+    };
+  });
+  return found.none ? null : found;
+}
+
+// The requests of a cycle, by client: the row in the sheet, the period and the month folder.
+function getCycleRequests_(cycleId) {
+  return cached_('requests:' + cycleId, function () {
+    const byClient = {};
+    readTable_('Requests').forEach(function (r) {
+      if (String(r.cycle_id) !== cycleId) return;
+      byClient[String(r.client_id)] = {
+        requestId: String(r.request_id),
+        period: String(r.period),
+        row: r._row,
+        folderId: String(r.drive_folder_id || ''),
+      };
+    });
+    return byClient;
+  });
+}
+
+// The client's request in the open cycle: { cycle, req }, or null if there is none.
+function findOpenRequest_(client) {
+  const cycle = getOpenCycle_();
+  if (!cycle) return null;
+  const req = getCycleRequests_(cycle.cycleId)[client.clientId];
+  return req ? { cycle: cycle, req: req } : null;
+}
+
+// Where each item of a cycle is in the Items tab: { itemId: row }. Only the ID column is read.
+function getCycleItemRows_(cycleId) {
+  return cached_('itemRows:' + cycleId, function () {
+    const sheet = getSheet_('Items');
+    const lastRow = sheet.getLastRow();
+    const rows = {};
+    if (lastRow < 2) return rows;
+    const column = getHeaders_(sheet).indexOf('item_id') + 1;
+    const prefix = cycleId + '_';
+    sheet.getRange(2, column, lastRow - 1, 1).getValues().forEach(function (value, i) {
+      const id = String(value[0]);
+      if (id.indexOf(prefix) === 0) rows[id] = i + 2;
+    });
+    return rows;
+  });
+}
+
+// An item's row, read fresh inside the lock: { row, record }. If the remembered row no longer
+// holds this item (someone sorted the tab), the index is built again once.
+function readItem_(cycleId, itemId) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const row = getCycleItemRows_(cycleId)[itemId];
+    if (row) {
+      const record = readRecordAt_('Items', row);
+      if (record && String(record.item_id) === itemId) return { row: row, record: record };
+    }
+    forgetCached_('itemRows:' + cycleId);
+  }
+  return null;
+}
+
+// The month folder of a request (D31). Its ID is kept in Requests.drive_folder_id.
+// A folder moved to the trash is an edge case for stage 8.
+function getRequestFolder_(client, req, cycleId) {
+  if (req.folderId) {
+    try {
+      return DriveApp.getFolderById(req.folderId);
+    } catch (err) {
+      // Deleted. A new one is created below.
+    }
+  }
+  const folder = getClientFolder_(client).createFolder(req.period);
+  updateRecord_('Requests', req.row, 'request_id', req.requestId, { drive_folder_id: folder.getId() });
+  req.folderId = folder.getId();
+  forgetCached_('requests:' + cycleId);
+  return folder;
+}
+
+// The document types, by ID, from the cache.
+function getDocTypes_() {
+  return cached_('docTypes', function () {
+    const types = {};
+    readTable_('DocTypes').forEach(function (r) {
+      if (!r.doc_type_id) return;
+      types[String(r.doc_type_id)] = {
+        nameHe: String(r.name_he || ''),
+        fileLabel: String(r.file_label || ''),
+        required: isChecked_(r.required),
+        sortOrder: Number(r.sort_order) || 0,
+      };
+    });
+    return types;
+  });
+}
+
+// "2026-10" -> "אוקטובר 2026". "2026-09_10" -> "ספטמבר–אוקטובר 2026".
+function periodLabel_(period) {
+  const match = String(period).match(/^(\d{4})-(\d{2})(?:_(\d{2}))?$/);
+  if (!match) return String(period);
+  const first = MONTHS_HE[Number(match[2]) - 1];
+  return match[3] ? first + '–' + MONTHS_HE[Number(match[3]) - 1] + ' ' + match[1] : first + ' ' + match[1];
+}
+
+// " הבקשה הבאה תגיע ב-1 בדצמבר." The next cycle opens on the 1st of the month after next:
+// the October cycle runs in November, so the November cycle opens on 1 December.
+function nextRequestText_() {
+  const cycle = getOpenCycle_();
+  if (!cycle) return '';
+  const month = Number(cycle.cycleId.split('-')[1]);   // 1-12
+  const opens = (month + 1) % 12;                      // the month after next, 0-11
+  return ' הבקשה הבאה תגיע ב-1 ב' + MONTHS_HE[opens] + '.';
+}
+
+// Forgets everything the server keeps about the months. setup() and seedDemo() call it.
+function forgetModelCache_() {
+  const cycle = getOpenCycle_();
+  if (cycle) {
+    forgetCached_('requests:' + cycle.cycleId);
+    forgetCached_('itemRows:' + cycle.cycleId);
+  }
+  ['openCycle', 'clients', 'settings', 'docTypes'].forEach(forgetCached_);
+}
+
+// ============================================================
 // Files and Drive
 // ============================================================
 
@@ -542,17 +490,6 @@ function getMaxFileMb_() {
   return value > 0 ? value : CONFIG.defaultMaxFileMb;
 }
 
-// Until the Cycles tab exists (stage 4), the open cycle is last month: the October cycle runs
-// in November (data-model.md, chapter 1). For monthly clients, the period is the cycle.
-function currentPeriod_() {
-  const now = now_();
-  const year = Number(Utilities.formatDate(now, CONFIG.timeZone, 'yyyy'));
-  const month = Number(Utilities.formatDate(now, CONFIG.timeZone, 'MM'));
-  const cycleYear = month === 1 ? year - 1 : year;
-  const cycleMonth = month === 1 ? 12 : month - 1;
-  return cycleYear + '-' + pad2_(cycleMonth);
-}
-
 // The client's folder (D31). Its ID is saved in Clients on the first upload (D29). If the saved
 // folder was deleted, a new one is created.
 function getClientFolder_(client) {
@@ -571,37 +508,6 @@ function getClientFolder_(client) {
   return folder;
 }
 
-// The month folder of a request. Until the Requests tab exists (stage 4), its ID is kept in the
-// script properties under the request ID, and then it moves to Requests.drive_folder_id.
-// A folder moved to the trash is an edge case for stage 8.
-function getMonthFolder_(client, period, requestId) {
-  const props = PropertiesService.getScriptProperties();
-  const key = 'MONTH_FOLDER:' + requestId;
-  const savedId = props.getProperty(key);
-  if (savedId) {
-    try {
-      return DriveApp.getFolderById(savedId);
-    } catch (err) {
-      // Deleted. A new one is created below.
-    }
-  }
-  const folder = getClientFolder_(client).createFolder(period);
-  props.setProperty(key, folder.getId());
-  return folder;
-}
-
-// The next number for a document type in a request (D31): one more than the files it already
-// has, rejected ones included, so a number never repeats. Rows in Uploads are never deleted.
-function nextSeq_(itemId) {
-  const sheet = getSheet_('Uploads');
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return 1;
-  const column = getHeaders_(sheet).indexOf('item_id') + 1;
-  const found = sheet.getRange(2, column, lastRow - 1, 1)
-    .createTextFinder(itemId).matchEntireCell(true).findAll();
-  return found.length + 1;
-}
-
 function pad2_(n) {
   return n < 10 ? '0' + n : String(n);
 }
@@ -612,7 +518,7 @@ function pad2_(n) {
 
 // Invisible characters: control characters, and marks that change the direction of text.
 // A name could use them to look different from what it is, so they are removed.
-const INVISIBLE_CHARS = /[\u0000-\u001f\u007f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
+const INVISIBLE_CHARS = /[\u0000-\u001f\u007f؜​-‏‪-‮⁠-⁩﻿]/g;
 // Characters Windows does not allow in file names. A downloaded ZIP would break on them.
 const WINDOWS_UNSAFE_CHARS = /[\\\/:*?<>|]/g;
 
@@ -633,7 +539,7 @@ function cleanFolderName_(text, maxLength) {
   const name = String(text || '').normalize('NFC')
     .replace(/\s+/g, ' ')                // tabs and line breaks become spaces
     .replace(INVISIBLE_CHARS, '')
-    .replace(/"/g, '\u05F4')            // " -> ״ (gershayim), so בע"מ stays readable
+    .replace(/"/g, '״')            // " -> ״ (gershayim), so בע"מ stays readable
     .replace(WINDOWS_UNSAFE_CHARS, '-')
     .replace(/\s+/g, ' ')
     .replace(/^[\s.]+|[\s.]+$/g, '');   // Windows drops a dot or a space at the end
@@ -645,7 +551,7 @@ function cleanFolderName_(text, maxLength) {
 // "Pixel – צילום אירועים" -> "Pixel-צילום-אירועים".
 function cleanFileNamePart_(text, maxLength) {
   const part = cleanFolderName_(text, 200)
-    .replace(/[\s_\u2010-\u2015\u2212-]+/g, '-')   // spaces, _ and every kind of dash
+    .replace(/[\s_‐-―−-]+/g, '-')   // spaces, _ and every kind of dash
     .replace(/^-+|-+$/g, '');
   return cutText_(part, maxLength || 40).replace(/[-.]+$/g, '');
 }
@@ -672,6 +578,13 @@ function newToken_() {
   const seed = Utilities.getUuid() + Utilities.getUuid();
   const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, seed);
   return Utilities.base64EncodeWebSafe(digest).replace(/=+$/, '').slice(0, 32);
+}
+
+// "shedmi.cpa+c07@gmail.com": a "plus" address of the office account (D12).
+function plusAddress_(tag) {
+  const email = getSetting_('office_email') || CONFIG.officeEmail;
+  const at = email.indexOf('@');
+  return email.slice(0, at) + '+' + String(tag).toLowerCase() + email.slice(at);
 }
 
 // ============================================================
@@ -720,7 +633,7 @@ function forgetCached_(name) {
 }
 
 // A simple trigger: Google runs it by itself whenever someone edits the spreadsheet by hand.
-// An edit in Settings or Clients counts at once, without waiting 10 minutes.
+// An edit counts at once, without waiting 10 minutes.
 // (Inserting or deleting a whole row is not an "edit" for Google: then the change counts
 // within 10 minutes. The dashboard will forget the cache by itself when it changes a client.)
 function onEdit(e) {
@@ -730,6 +643,8 @@ function onEdit(e) {
     const name = sheet.getName();
     if (name === 'Settings') forgetCached_('settings');
     if (name === 'Clients') forgetCached_('clients');
+    if (name === 'DocTypes') forgetCached_('docTypes');
+    if (name === 'Cycles' || name === 'Requests' || name === 'Items') forgetModelCache_();
     if (e.range.getRow() === 1) forgetCached_('headers:' + name);
   } catch (err) {
     // A simple trigger cannot show errors. The cache expires by itself within 10 minutes.
@@ -791,6 +706,38 @@ function readTable_(sheetName) {
   });
 }
 
+// One row as an object, by column name.
+function readRecordAt_(sheetName, row) {
+  const sheet = getSheet_(sheetName);
+  const headers = getHeaders_(sheet);
+  if (row < 2 || row > sheet.getLastRow()) return null;
+  const values = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
+  const record = {};
+  headers.forEach(function (header, c) { if (header) record[header] = values[c]; });
+  return record;
+}
+
+// Writes a whole row from an object, by column name. Call it inside the lock.
+function writeRecordAt_(sheetName, row, record) {
+  const sheet = getSheet_(sheetName);
+  const headers = getHeaders_(sheet);
+  const values = headers.map(function (header) {
+    const value = record[header];
+    return value === undefined || value === null ? '' : value;
+  });
+  sheet.getRange(row, 1, 1, headers.length).setValues([values]);
+}
+
+// Changes some fields of a row, after checking that the row still holds the same ID.
+function updateRecord_(sheetName, row, idColumn, expectedId, fields) {
+  const record = readRecordAt_(sheetName, row);
+  if (!record || String(record[idColumn]) !== String(expectedId)) {
+    throw new Error('השורה ' + row + ' בלשונית ' + sheetName + ' כבר לא שייכת ל-' + expectedId);
+  }
+  Object.keys(fields).forEach(function (key) { record[key] = fields[key]; });
+  writeRecordAt_(sheetName, row, record);
+}
+
 // Writes a row by column names. The format is set before the value, so text stays text
 // (otherwise Sheets turns "2026-10" into a date). Yes/no columns become checkboxes.
 // Call it inside the lock, or from setup().
@@ -823,6 +770,7 @@ function columnFormat_(sheetName, header) {
 
 function numberFormat_(format) {
   if (format === 'datetime') return SHEET_DATETIME_FORMAT;
+  if (format === 'date') return SHEET_DATE_FORMAT;
   if (format === 'number') return '0';
   if (format === 'checkbox') return '0.###############';  // automatic: TRUE and FALSE stay as they are
   return '@';  // plain text
@@ -845,15 +793,28 @@ function getSetting_(key) {
 }
 
 function setSetting_(key, value) {
-  const row = readTable_('Settings').filter(function (r) { return r.key === key; })[0];
-  const description = (DEFAULT_SETTINGS.filter(function (s) { return s[0] === key; })[0] || [])[2] || '';
-  if (!row) {
-    appendRow_('Settings', { key: key, value: String(value), description: description });
-  } else {
-    const sheet = getSheet_('Settings');
-    const column = getHeaders_(sheet).indexOf('value') + 1;
-    sheet.getRange(row._row, column).setValue(String(value));
-  }
+  setSettings_([[key, value]]);
+}
+
+// Writes several settings with one read of the tab. A missing key is added with its description
+// from the defaults (Setup.gs).
+function setSettings_(pairs) {
+  const sheet = getSheet_('Settings');
+  const valueColumn = getHeaders_(sheet).indexOf('value') + 1;
+  const rows = {};
+  readTable_('Settings').forEach(function (r) { rows[String(r.key)] = r._row; });
+  const descriptions = {};
+  defaultSettings_().forEach(function (s) { descriptions[s[0]] = s[2]; });
+  pairs.forEach(function (pair) {
+    const key = pair[0];
+    const value = String(pair[1]);
+    if (rows[key]) {
+      sheet.getRange(rows[key], valueColumn).setValue(value);
+    } else {
+      appendRow_('Settings', { key: key, value: value, description: descriptions[key] || '' });
+      rows[key] = sheet.getLastRow();
+    }
+  });
   forgetCached_('settings');
 }
 
@@ -891,6 +852,10 @@ function formatDateTime_(date) {
   return Utilities.formatDate(date, CONFIG.timeZone, TEXT_DATETIME_FORMAT);
 }
 
+function formatDate_(date) {
+  return Utilities.formatDate(date, CONFIG.timeZone, TEXT_DATE_FORMAT);
+}
+
 function formatSize_(bytes) {
   if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + ' KB';
   return (bytes / 1024 / 1024).toFixed(1) + ' MB';
@@ -905,14 +870,16 @@ function formatSize_(bytes) {
 const LAP_NAMES = {
   parse: 'קריאת הבקשה',
   checks: 'בדיקות',
+  cycle: 'מחזור ובקשה',
   decode: 'פענוח הקובץ',
   hash: 'טביעת אצבע',
   settings: 'הגדרות',
   lock: 'מנעול',
+  item: 'פריט',
   folder: 'תיקייה',
-  seq: 'מספור',
   save: 'שמירת הקובץ',        // in Drive
   uploads: 'רישום הקובץ',     // the row in Uploads
+  request: 'עדכון הבקשה',
   log: 'יומן',
 };
 

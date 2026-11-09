@@ -1,8 +1,9 @@
-/* Nelio · client page · stage 3 (skeleton)
+/* Nelio · client page · test page until the full page of stage 5
  *
  * 1. Reads the personal token from the link (#t=...).
- * 2. Asks the server ("hello") whether the link is valid.
- * 3. Uploads the chosen files one at a time ("upload").
+ * 2. Asks the server ("hello") whether the link is valid, and which month is open.
+ * 3. Uploads the chosen files one at a time ("upload"). Until stage 5 every file is
+ *    saved as "מסמך אחר" of the client's request.
  *
  * There is no byte-by-byte progress bar on purpose: listening to upload progress makes the
  * browser send a CORS "preflight" request first, and Apps Script cannot answer it.
@@ -10,7 +11,7 @@
 (function () {
   'use strict';
 
-  const PAGE_VERSION = '0.2.1';
+  const PAGE_VERSION = '0.3.0';
   const API_URL = String((window.NELIO_CONFIG && window.NELIO_CONFIG.apiUrl) || '').trim();
   const REQUEST_TIMEOUT_MS = 180000; // 3 minutes
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'];
@@ -28,6 +29,8 @@
     errorTitle: 'משהו השתבש',
     badResponse: 'השרת החזיר תשובה לא צפויה. נסו שוב בעוד כמה דקות.',
     greeting: 'שלום, ',
+    documentsFor: 'מסמכים ל',
+    until: 'עד',
     waiting: 'ממתין…',
     uploading: 'מעלה…',
     received: 'התקבל',
@@ -52,6 +55,7 @@
     retry: document.getElementById('retry-button'),
     upload: document.getElementById('view-upload'),
     greeting: document.getElementById('greeting'),
+    period: document.getElementById('period-line'),
     camera: document.getElementById('camera-input'),
     files: document.getElementById('files-input'),
     results: document.getElementById('results'),
@@ -88,10 +92,24 @@
       return showMessage(TEXT.offlineTitle, TEXT.offlineText, { retry: true, hint: TEXT.offlineHint });
     }
 
-    if (res.ok) {
+    if (res.ok && res.state === 'noRequest') {
+      // A client with no request in the open month, for example bimonthly in an odd month.
+      if (res.officeName) els.office.textContent = res.officeName;
+      showMessage(TEXT.greeting + (res.businessName || ''), res.message);
+      showVersions(res.version);
+    } else if (res.ok) {
       state.maxFileMb = Number(res.maxFileMb) || state.maxFileMb;
       if (res.officeName) els.office.textContent = res.officeName;
       els.greeting.textContent = TEXT.greeting + (res.businessName || '');
+      // "מסמכים לאוקטובר 2026 · עד 12/11/2026" (brief.md, the client page)
+      els.period.textContent = '';
+      if (res.periodLabel) {
+        els.period.appendChild(document.createTextNode(TEXT.documentsFor + res.periodLabel));
+        if (res.dueDate) {
+          els.period.appendChild(document.createTextNode(' · ' + TEXT.until + ' '));
+          els.period.appendChild(isolated(res.dueDate));
+        }
+      }
       show('upload');
       // How long the page took to open, from the tap on the link (for the tests in stage 3.2).
       // performance.now() counts from the moment the browser started loading the page.
