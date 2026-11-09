@@ -1,0 +1,135 @@
+/* Nelio · client page · stage 3.1 (skeleton).
+   Mobile first. The full design language comes in stage 4. */
+
+:root {
+  --bg: #f5f6f8;
+  --card: #ffffff;
+  --text: #1c2333;
+  --muted: #5d6677;
+  --line: #e2e5ea;
+  --accent: #1f5f8b;
+  --accent-soft: #e8f0f6;
+  --ok: #1d7a4e;
+  --error: #b42318;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+
+.office { font-weight: 700; }
+.system { color: var(--muted); font-size: 0.875rem; }
+
+.badge {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  background: #fff3d1;
+  color: #6f5100;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+main {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+h1 { font-size: 1.3rem; margin: 0 0 6px; }
+p { margin: 0 0 8px; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+
+.button {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  font-size: 1.05rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.button.secondary {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.button:active { opacity: 0.85; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.results {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.results li {
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+}
+
+.results .name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.results .status { font-size: 0.95rem; }
+.results .status.busy { color: var(--accent); }
+.results .status.ok { color: var(--ok); font-weight: 600; }
+.results .status.error { color: var(--error); }
+
+.results .meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.foot {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 24px 16px;
+}
+
+.versions { margin-top: 4px; opacity: 0.8; }

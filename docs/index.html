@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Nelio · שדמי ושות', רואי חשבון</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <div class="office" id="office-name">שדמי ושות', רואי חשבון</div>
+      <div class="system">Nelio · איסוף מסמכים</div>
+    </div>
+    <span class="badge">דף בדיקה</span>
+  </header>
+
+  <main>
+    <noscript>
+      <section class="card">
+        <h1>צריך להפעיל JavaScript</h1>
+        <p>כדי להעלות מסמכים, הפעילו JavaScript בדפדפן ופתחו את הקישור שוב.</p>
+      </section>
+    </noscript>
+
+    <section class="card" id="view-loading" hidden>
+      <p class="muted">בודקים את הקישור…</p>
+    </section>
+
+    <section class="card" id="view-message" hidden>
+      <h1 id="message-title"></h1>
+      <p id="message-text"></p>
+      <p class="muted small" id="message-hint" hidden></p>
+      <button type="button" class="button secondary" id="retry-button" hidden>נסו שוב</button>
+    </section>
+
+    <section class="card" id="view-upload" hidden>
+      <h1 id="greeting">שלום</h1>
+      <p class="muted">שלב השלד: מצלמים או בוחרים תמונה או PDF, והקובץ נשמר בתיקיית הבדיקות של המשרד.</p>
+
+      <label class="button" for="camera-input">צילום במצלמה</label>
+      <input class="visually-hidden" id="camera-input" type="file" accept="image/*" capture="environment">
+
+      <label class="button secondary" for="files-input">בחירת קבצים מהמכשיר</label>
+      <input class="visually-hidden" id="files-input" type="file" accept="image/*,application/pdf" multiple>
+
+      <ul class="results" id="results"></ul>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div>פרויקט הדגמה · משרד בדיוני</div>
+    <div class="versions" id="versions"></div>
+  </footer>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
