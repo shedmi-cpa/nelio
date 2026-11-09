@@ -1,16 +1,18 @@
 /**
  * Nelio · server · Google Apps Script, bound to the "Nelio – נתונים" spreadsheet.
  *
- * Stage 3.1, the skeleton:
+ * The skeleton (stage 3):
  *   setup()   Run from the editor. Creates the tabs used so far, the Drive root folder
  *             and a test link. Safe to run again: it only adds what is missing.
  *   doGet()   Health check. Opening the web app address in a browser shows that the server is up.
  *   doPost()  The API of the client page: "hello" checks the link, "upload" saves one file
  *             to Drive and records it in the sheet.
  *
- * The source of truth is apps-script/Code.gs in github.com/shedmi-cpa/nelio.
- * After every change: copy the whole file into the editor, then deploy a new version
- * (Deploy > Manage deployments > Edit > Version: New version). The address stays the same.
+ * The source of truth is apps-script/ in github.com/shedmi-cpa/nelio.
+ * A push to main that changes apps-script/ deploys the server by itself
+ * (.github/workflows/deploy-server.yml): clasp uploads the code and deploys a new version
+ * to the same address. Do not edit the code in the Apps Script editor: the next push
+ * replaces everything there with the files from GitHub.
  */
 
 // ============================================================
@@ -18,7 +20,7 @@
 // ============================================================
 
 const CONFIG = {
-  version: '0.1.0',
+  version: '0.1.1',
   officeEmail: 'shedmi.cpa@gmail.com',   // setup() refuses to run from any other account
   timeZone: 'Asia/Jerusalem',
   clientPageUrl: 'https://shedmi-cpa.github.io/nelio/',
@@ -234,16 +236,18 @@ function doGet() {
 // The page sends JSON as plain text. That keeps it a "simple" request, without a CORS
 // preflight, which Apps Script cannot answer.
 function doPost(e) {
+  const watch = newStopwatch_();
   let request = null;
   try {
     request = JSON.parse(e.postData.contents);
   } catch (err) {
     return json_(fail_('BAD_REQUEST', MESSAGES.badRequest));
   }
+  watch.lap('parse');
   const action = request && typeof request === 'object' ? String(request.action || '') : '';
   try {
-    if (action === 'hello') return json_(handleHello_(request));
-    if (action === 'upload') return json_(handleUpload_(request));
+    if (action === 'hello') return json_(handleHello_(request, watch));
+    if (action === 'upload') return json_(handleUpload_(request, watch));
     return json_(fail_('BAD_REQUEST', MESSAGES.badRequest));
   } catch (err) {
     logError_('doPost:' + action, err);
@@ -252,22 +256,27 @@ function doPost(e) {
 }
 
 // The page calls this when it opens: is the link valid, and what should it show?
-function handleHello_(request) {
+function handleHello_(request, watch) {
   const client = findClientByToken_(request.token);
   if (!client) return fail_('BAD_TOKEN', MESSAGES.badToken);
+  watch.lap('checks');
+  const officeName = getSetting_('office_name');
+  const maxFileMb = getMaxFileMb_();
+  watch.lap('settings');
   return {
     ok: true,
     businessName: client.businessName,
-    officeName: getSetting_('office_name'),
-    maxFileMb: getMaxFileMb_(),
+    officeName: officeName,
+    maxFileMb: maxFileMb,
     version: CONFIG.version,
+    serverMs: watch.totalMs(),
+    timingText: formatLaps_(watch.laps()),
   };
 }
 
 // Data model, chapter 2, steps 4-10 (the skeleton version).
-function handleUpload_(request) {
-  const startedAt = Date.now();
-
+// The stopwatch times each step (D29). The times reach the page and the Log tab.
+function handleUpload_(request, watch) {
   // Step 4: checks. If anything is wrong, nothing is saved.
   const client = findClientByToken_(request.token);
   if (!client) return fail_('BAD_TOKEN', MESSAGES.badToken);
@@ -276,6 +285,7 @@ function handleUpload_(request) {
   const mimeType = resolveMimeType_(request.mimeType, originalName);
   if (!mimeType) return fail_('BAD_TYPE', MESSAGES.badType);
   if (!request.data) return fail_('NO_FILE', MESSAGES.noFile);
+  watch.lap('checks');
 
   let bytes;
   try {
@@ -283,8 +293,10 @@ function handleUpload_(request) {
   } catch (err) {
     return fail_('BAD_FILE', MESSAGES.badFile);
   }
+  watch.lap('decode');
   if (!bytes.length) return fail_('EMPTY_FILE', MESSAGES.emptyFile);
   const maxMb = getMaxFileMb_();
+  watch.lap('settings');
   if (bytes.length > maxMb * 1024 * 1024) {
     return fail_('TOO_BIG', MESSAGES.tooBig.replace('{mb}', maxMb));
   }
@@ -292,12 +304,17 @@ function handleUpload_(request) {
   // Step 5: one upload at a time, so two uploads never write to the same row.
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(CONFIG.lockTimeoutMs)) return fail_('BUSY', MESSAGES.busy);
+  watch.lap('lock');
   try {
     // Step 6: Drive. The test folder is created on the first upload.
     const at = now_();
     const folder = getOrCreateFolder_(ensureRootFolder_(), CONFIG.testFolderName);
+    watch.lap('folder');
     const storedName = buildTestFileName_(at, originalName, mimeType);
     const file = folder.createFile(Utilities.newBlob(bytes, mimeType, storedName));
+    watch.lap('save');
+    const fileHash = sha256Hex_(bytes);
+    watch.lap('hash');
 
     // Step 7: a row in Uploads. (Items and the request status arrive in stage 5.)
     const uploadId = 'TEST_' + Utilities.formatDate(at, CONFIG.timeZone, 'yyyyMMdd-HHmmss') +
@@ -312,19 +329,22 @@ function handleUpload_(request) {
       drive_file_id: file.getId(),
       mime_type: mimeType,
       size_bytes: bytes.length,
-      file_hash: sha256Hex_(bytes),
+      file_hash: fileHash,
       upload_key: String(request.uploadKey || '').slice(0, 64),
       status: 'active',
     });
+    watch.lap('uploads');
 
-    // Step 9: the log.
+    // Step 9: the log. Its row holds the times up to here (it cannot time its own writing).
     logEvent_({
       actor: 'client:' + client.clientId,
       event: 'upload',
       client_id: client.clientId,
-      details: 'הועלה קובץ בדיקה: ' + originalName + ' (' + formatSize_(bytes.length) + ')',
+      details: 'הועלה קובץ בדיקה: ' + originalName + ' (' + formatSize_(bytes.length) + '). ' +
+        'זמנים בשרת: ' + formatLaps_(watch.laps()),
     });
     SpreadsheetApp.flush();
+    watch.lap('log');
 
     // Step 10: the phone shows "התקבל".
     return {
@@ -334,7 +354,8 @@ function handleUpload_(request) {
       mimeType: mimeType,
       sizeBytes: bytes.length,
       receivedAt: formatDateTime_(at),
-      serverMs: Date.now() - startedAt,
+      serverMs: watch.totalMs(),
+      timingText: formatLaps_(watch.laps()),
     };
   } finally {
     lock.releaseLock();
@@ -394,6 +415,45 @@ function sha256Hex_(bytes) {
   return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes)
     .map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); })
     .join('');
+}
+
+// ============================================================
+// Names in Drive (stage 3.2)
+// ============================================================
+
+// Invisible characters: control characters, and marks that change the direction of text.
+// A name could use them to look different from what it is, so they are removed.
+const INVISIBLE_CHARS = /[\u0000-\u001f\u007f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
+// Characters Windows does not allow in file names. A downloaded ZIP would break on them.
+const WINDOWS_UNSAFE_CHARS = /[\\\/:*?<>|]/g;
+
+// A business name as a folder name: keeps spaces and dashes, and replaces only what
+// Windows cannot hold. "ג'ו שיפוצים בע"מ" -> "ג'ו שיפוצים בע״מ", "24/7 מיזוג" -> "24-7 מיזוג".
+function cleanFolderName_(text, maxLength) {
+  const name = String(text || '').normalize('NFC')
+    .replace(/\s+/g, ' ')                // tabs and line breaks become spaces
+    .replace(INVISIBLE_CHARS, '')
+    .replace(/"/g, '\u05F4')            // " -> ״ (gershayim), so בע"מ stays readable
+    .replace(WINDOWS_UNSAFE_CHARS, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s.]+|[\s.]+$/g, '');   // Windows drops a dot or a space at the end
+  return cutText_(name, maxLength || 80).replace(/[\s.]+$/g, '');
+}
+
+// One part of a file name (the business name, the document type). Like a folder name, but
+// spaces and every kind of dash become a single "-", because "_" separates the parts.
+// "Pixel – צילום אירועים" -> "Pixel-צילום-אירועים".
+function cleanFileNamePart_(text, maxLength) {
+  const part = cleanFolderName_(text, 200)
+    .replace(/[\s_\u2010-\u2015\u2212-]+/g, '-')   // spaces, _ and every kind of dash
+    .replace(/^-+|-+$/g, '');
+  return cutText_(part, maxLength || 40).replace(/[-.]+$/g, '');
+}
+
+// Cuts by characters, not by UTF-16 units, so a character is never cut in half.
+function cutText_(text, maxLength) {
+  const chars = Array.from(String(text));
+  return chars.length > maxLength ? chars.slice(0, maxLength).join('') : String(text);
 }
 
 // ============================================================
@@ -544,6 +604,48 @@ function formatDateTime_(date) {
 function formatSize_(bytes) {
   if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + ' KB';
   return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+// ============================================================
+// Timing (D29): where does the time go in each request?
+// ============================================================
+
+// The names of the steps, as the page and the Log tab show them. Hebrew only: an English
+// word next to a number would scramble the order of the line (rules.md, "quality").
+const LAP_NAMES = {
+  parse: 'קריאת הבקשה',
+  checks: 'בדיקות',
+  decode: 'פענוח הקובץ',
+  settings: 'הגדרות',
+  lock: 'מנעול',
+  folder: 'תיקייה',
+  save: 'שמירת הקובץ',        // in Drive
+  hash: 'טביעת אצבע',
+  uploads: 'רישום הקובץ',     // the row in Uploads
+  log: 'יומן',
+};
+
+// watch.lap('save') records the time since the previous lap under the name "save".
+function newStopwatch_() {
+  const startedAt = Date.now();
+  let lastAt = startedAt;
+  const laps = [];
+  return {
+    lap: function (name) {
+      const at = Date.now();
+      laps.push({ name: name, ms: at - lastAt });
+      lastAt = at;
+    },
+    laps: function () { return laps.slice(); },
+    totalMs: function () { return Date.now() - startedAt; },
+  };
+}
+
+// "קריאת הבקשה 0.12 · בדיקות 0.00 · ... (שניות)"
+function formatLaps_(laps) {
+  return laps.map(function (lap) {
+    return (LAP_NAMES[lap.name] || lap.name) + ' ' + (lap.ms / 1000).toFixed(2);
+  }).join(' · ') + ' (שניות)';
 }
 
 function json_(data) {

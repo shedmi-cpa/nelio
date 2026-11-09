@@ -1,0 +1,102 @@
+# Deploys the Nelio server (Google Apps Script) whenever its code changes on main.
+#
+# 1. clasp uploads apps-script/ to the Apps Script project named in .clasp.json.
+# 2. clasp deploys a new version to the existing web app, so its address (docs/config.js)
+#    never changes.
+# 3. The workflow asks the live server for its version, and fails if it is not the new one.
+#
+# clasp signs in to the office Google account with a stored login: the repository secret
+# CLASPRC_JSON (Settings > Secrets and variables > Actions). It is never in the code, and
+# GitHub hides it in the logs. To cut access: delete the secret, or remove "clasp" in the
+# Google account under Security > Third-party connections.
+name: Deploy server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps-script/**'
+      - '.clasp.json'
+      - '.github/workflows/deploy-server.yml'
+  workflow_dispatch:
+
+# One deployment at a time, in the order of the pushes.
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install clasp
+        run: npm install --global @google/clasp@3.4.1
+
+      - name: Read the server address and the new version
+        id: info
+        run: |
+          url=$(sed -n "s/.*apiUrl: *'\(https:\/\/script\.google\.com\/[^']*\/exec\)'.*/\1/p" docs/config.js | head -n 1)
+          deployment=$(printf '%s' "$url" | sed -n 's#.*/macros/s/\([^/]*\)/exec$#\1#p')
+          version=$(sed -n "s/^ *version: *'\([^']*\)'.*/\1/p" apps-script/Code.gs | head -n 1)
+          if [ -z "$url" ] || [ -z "$deployment" ] || [ -z "$version" ]; then
+            echo "::error title=Missing details::Could not read the server address (docs/config.js) or the version (apps-script/Code.gs)."
+            exit 1
+          fi
+          echo "Server address: $url"
+          echo "Version to deploy: $version"
+          {
+            echo "url=$url"
+            echo "deployment=$deployment"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to Google with the stored clasp login
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "::error title=Missing secret::Add the clasp login as the repository secret CLASPRC_JSON."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          clasp show-authorized-user
+
+      - name: Upload the code (clasp push)
+        run: clasp push --force
+
+      - name: Deploy a new version to the same address
+        env:
+          DEPLOYMENT_ID: ${{ steps.info.outputs.deployment }}
+          VERSION: ${{ steps.info.outputs.version }}
+        run: clasp update-deployment "$DEPLOYMENT_ID" --description "$VERSION"
+
+      - name: Check that the live server runs the new version
+        env:
+          URL: ${{ steps.info.outputs.url }}
+          EXPECTED: ${{ steps.info.outputs.version }}
+        run: |
+          live=""
+          for attempt in 1 2 3 4 5 6; do
+            live=$(curl -sSL --max-time 30 "$URL" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{process.stdout.write(String(JSON.parse(s).version||''))}catch(e){}})" || true)
+            if [ "$live" = "$EXPECTED" ]; then
+              echo "::notice title=Server is live::Nelio server $EXPECTED answers at the usual address."
+              exit 0
+            fi
+            echo "Attempt $attempt: the server answers version '$live', waiting for $EXPECTED..."
+            sleep 10
+          done
+          echo "::error title=Wrong version::The server answers version '$live' instead of $EXPECTED."
+          exit 1

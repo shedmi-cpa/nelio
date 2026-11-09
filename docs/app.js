@@ -1,4 +1,4 @@
-/* Nelio · client page · stage 3.1 (skeleton)
+/* Nelio · client page · stage 3 (skeleton)
  *
  * 1. Reads the personal token from the link (#t=...).
  * 2. Asks the server ("hello") whether the link is valid.
@@ -10,7 +10,7 @@
 (function () {
   'use strict';
 
-  const PAGE_VERSION = '0.1.0';
+  const PAGE_VERSION = '0.1.1';
   const API_URL = String((window.NELIO_CONFIG && window.NELIO_CONFIG.apiUrl) || '').trim();
   const REQUEST_TIMEOUT_MS = 180000; // 3 minutes
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'];
@@ -39,6 +39,7 @@
     connectionLost: 'החיבור לשרת נכשל באמצע ההעלאה. בדקו את החיבור ונסו שוב.',
     seconds: 'שניות',
     onServer: 'בשרת',
+    opened: 'נפתח תוך',
   };
 
   const els = {
@@ -61,6 +62,7 @@
     token: readToken(),
     maxFileMb: 20,             // replaced by the server's value (Settings > max_file_mb)
     queue: Promise.resolve(),  // uploads run one after another
+    firstOpen: true,           // the opening time is shown only for the first try, not after "נסו שוב"
   };
 
   window.addEventListener('hashchange', function () { window.location.reload(); });
@@ -77,6 +79,8 @@
     if (!state.token) return showMessage(TEXT.noTokenTitle, TEXT.noTokenText);
 
     show('loading');
+    const firstOpen = state.firstOpen;
+    state.firstOpen = false;
     let res;
     try {
       res = await callServer({ action: 'hello', token: state.token });
@@ -88,8 +92,12 @@
       state.maxFileMb = Number(res.maxFileMb) || state.maxFileMb;
       if (res.officeName) els.office.textContent = res.officeName;
       els.greeting.textContent = TEXT.greeting + (res.businessName || '');
-      showVersions(res.version);
       show('upload');
+      // How long the page took to open, from the tap on the link (for the tests in stage 3.2).
+      // performance.now() counts from the moment the browser started loading the page.
+      const openSeconds = firstOpen && window.performance && typeof performance.now === 'function'
+        ? performance.now() / 1000 : 0;
+      showVersions(res.version, openSeconds, res.serverMs);
     } else if (res.code === 'BAD_TOKEN') {
       showMessage(TEXT.badTokenTitle, res.message);
     } else {
@@ -214,24 +222,35 @@
     show('message');
   }
 
-  function showVersions(serverVersion) {
-    els.versions.textContent = 'דף ' + PAGE_VERSION + (serverVersion ? ' · שרת ' + serverVersion : '');
+  // "דף 0.1.1 · שרת 0.1.1 · נפתח תוך 4.3 שניות (בשרת: 0.6)"
+  function showVersions(serverVersion, openSeconds, serverMs) {
+    let text = 'דף ' + PAGE_VERSION + (serverVersion ? ' · שרת ' + serverVersion : '');
+    if (openSeconds) {
+      text += ' · ' + TEXT.opened + ' ' + openSeconds.toFixed(1) + ' ' + TEXT.seconds;
+      if (serverMs) text += ' (' + TEXT.onServer + ': ' + (serverMs / 1000).toFixed(1) + ')';
+    }
+    els.versions.textContent = text;
   }
 
-  // One line per file: name, status, and (on success) technical details for the tests.
+  // One line per file: name, status, and (on success) technical details for the tests:
+  // the stored name, type, size and time, and below them the time of each step on the server.
   function addRow(file) {
     const li = document.createElement('li');
     const name = document.createElement('div');
     const status = document.createElement('div');
     const meta = document.createElement('div');
+    const steps = document.createElement('div');
     name.className = 'name';
     name.appendChild(isolated(file.name || 'קובץ'));
     status.className = 'status';
     status.textContent = TEXT.waiting;
     meta.className = 'meta';
+    steps.className = 'meta';
+    steps.hidden = true;
     li.appendChild(name);
     li.appendChild(status);
     li.appendChild(meta);
+    li.appendChild(steps);
     els.results.appendChild(li);
 
     return {
@@ -254,6 +273,10 @@
           formatSize(res.sizeBytes || chosenFile.size),
           timing,
         ]);
+        if (res.timingText) {
+          steps.textContent = res.timingText;
+          steps.hidden = false;
+        }
       },
     };
   }

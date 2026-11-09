@@ -1,0 +1,6 @@
+# The clasp login: a key to the office Google account. It lives in the user's home folder
+# and in the GitHub secret CLASPRC_JSON, never in this repository.
+.clasprc.json
+
+# Local tools
+node_modules/
