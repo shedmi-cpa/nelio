@@ -21,12 +21,12 @@
 // ============================================================
 
 const CONFIG = {
-  version: '0.2.0',
+  version: '0.2.1',
   officeEmail: 'shedmi.cpa@gmail.com',   // setup() refuses to run from any other account
   timeZone: 'Asia/Jerusalem',
   clientPageUrl: 'https://shedmi-cpa.github.io/nelio/',
   rootFolderName: 'שדמי – מסמכי לקוחות',
-  defaultMaxFileMb: 20,                  // decided in stage 3.2, after the tests with large files
+  defaultMaxFileMb: 10,                  // D32: covers real documents, and uploads stay far from the page's time limit
   lockTimeoutMs: 30000,
   cacheSeconds: 600,                     // 10 minutes (D29)
 };
@@ -137,7 +137,7 @@ const DEFAULT_SETTINGS = [
   ['office_email', CONFIG.officeEmail, 'הכתובת שממנה יוצאים המיילים'],
   ['client_page_url', CONFIG.clientPageUrl, 'כתובת הדף של הלקוח. ממנה נבנה הקישור האישי'],
   ['drive_root_folder_id', '', 'תיקיית השורש ב-Drive. נוצרת ב-setup'],
-  ['max_file_mb', String(CONFIG.defaultMaxFileMb), 'גודל מקסימלי לקובץ, במגה-בייט. ייקבע בסוף שלב 3.2'],
+  ['max_file_mb', String(CONFIG.defaultMaxFileMb), 'גודל מקסימלי לקובץ, במגה-בייט (D32)'],
   ['test_link', '', 'הקישור של "לקוח בדיקה". יוחלף בקישורים האישיים של הלקוחות'],
   ['test_link_2', '', 'הקישור של לקוח הבדיקה השני, עם גרש ומירכאות בשם'],
 ];

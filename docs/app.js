@@ -10,7 +10,7 @@
 (function () {
   'use strict';
 
-  const PAGE_VERSION = '0.2.0';
+  const PAGE_VERSION = '0.2.1';
   const API_URL = String((window.NELIO_CONFIG && window.NELIO_CONFIG.apiUrl) || '').trim();
   const REQUEST_TIMEOUT_MS = 180000; // 3 minutes
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'];
@@ -60,7 +60,7 @@
 
   const state = {
     token: readToken(),
-    maxFileMb: 20,             // replaced by the server's value (Settings > max_file_mb)
+    maxFileMb: 10,             // replaced by the server's value (Settings > max_file_mb, D32)
     queue: Promise.resolve(),  // uploads run one after another
     firstOpen: true,           // the opening time is shown only for the first try, not after "נסו שוב"
   };
