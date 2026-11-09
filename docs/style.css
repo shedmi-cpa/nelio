@@ -135,3 +135,27 @@ p { margin: 0 0 8px; }
 }
 
 .versions { margin-top: 4px; opacity: 0.8; }
+
+/* Stage 5.1: a plain list of documents. The final look (the folder, D38) comes in 5.2. */
+
+.summary { margin: 0 0 10px; color: var(--muted); }
+.summary:empty { display: none; }
+
+.progress { margin: 12px 0; }
+.progress-text { font-size: 0.9rem; color: var(--accent); margin-bottom: 4px; }
+.progress-track { height: 8px; background: var(--accent-soft); border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; width: 0; background: var(--accent); transition: width 0.25s linear; }
+
+.docs { list-style: none; margin: 12px 0; padding: 0; }
+.docs > li { border-top: 1px solid var(--line); padding: 12px 0; }
+.docs .doc-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.docs .doc-name { font-weight: 700; }
+.docs .doc-state { font-size: 0.9rem; white-space: nowrap; }
+.docs .doc-state.missing { color: var(--muted); }
+.docs .doc-state.received { color: var(--ok); font-weight: 600; }
+.docs .doc-state.rejected { color: var(--error); font-weight: 600; }
+.docs .doc-state.not_applicable { color: var(--muted); }
+.docs .doc-desc { color: var(--muted); font-size: 0.85rem; margin: 2px 0 0; }
+.docs .doc-actions { display: flex; gap: 8px; margin-top: 8px; }
+.docs .doc-actions .button { margin-top: 0; padding: 10px; font-size: 0.95rem; }
+.docs .results { margin-top: 8px; }

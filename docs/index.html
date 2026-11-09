@@ -41,16 +41,19 @@
     <section class="card" id="view-upload" hidden>
       <h1 id="greeting">שלום</h1>
       <p class="period" id="period-line"></p>
-      <p class="muted">דף בדיקה: כל קובץ נשמר בתיקייה שלכם במשרד, בתור "מסמך אחר". רשימת המסמכים המלאה תגיע בשלב 5.</p>
+      <p class="summary" id="summary-line"></p>
 
-      <label class="button" for="camera-input">צילום במצלמה</label>
-      <input class="visually-hidden" id="camera-input" type="file" accept="image/*" capture="environment">
+      <div class="progress" id="progress" hidden>
+        <div class="progress-text" id="progress-text"></div>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+      </div>
 
-      <label class="button secondary" for="files-input">בחירת קבצים מהמכשיר</label>
-      <input class="visually-hidden" id="files-input" type="file" accept="image/*,application/pdf" multiple>
-
-      <ul class="results" id="results"></ul>
+      <ul class="docs" id="docs"></ul>
+      <p class="muted small">דף בדיקה: המראה הסופי של הרשימה יגיע בהמשך שלב 5.</p>
     </section>
+
+    <input class="visually-hidden" id="camera-input" type="file" accept="image/*" capture="environment" tabindex="-1">
+    <input class="visually-hidden" id="files-input" type="file" accept="image/*,application/pdf" multiple tabindex="-1">
   </main>
 
   <footer class="foot">

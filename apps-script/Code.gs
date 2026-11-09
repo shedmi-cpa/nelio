@@ -24,7 +24,7 @@
 // ============================================================
 
 const CONFIG = {
-  version: '0.3.1',
+  version: '0.4.0',
   officeEmail: 'shedmi.cpa@gmail.com',   // setup() refuses to run from any other account
   timeZone: 'Asia/Jerusalem',
   clientPageUrl: 'https://shedmi-cpa.github.io/nelio/',
@@ -60,9 +60,9 @@ const EXTENSION_TYPES = {
   heic: 'image/heic', heif: 'image/heif', pdf: 'application/pdf',
 };
 
-// Until the full client page of stage 5 lets the client choose the type of each document,
-// every upload goes to the request's "מסמך אחר".
-const UPLOAD_DOC_TYPE = 'OTHER';
+// "מסמך אחר": optional, has no "לא היה לי", and never changes the state of the request
+// (data-model.md 3.1). An upload that names no document goes here (older versions of the page).
+const OTHER_DOC_TYPE = 'OTHER';
 
 // Everything the client may see is in Hebrew (rules.md).
 const MESSAGES = {
@@ -74,6 +74,7 @@ const MESSAGES = {
   badFile: 'הקובץ הגיע פגום. נסו להעלות אותו שוב.',
   emptyFile: 'הקובץ ריק.',
   tooBig: 'הקובץ גדול מדי. הגודל המקסימלי הוא {mb} מגה-בייט.',
+  badItem: 'המסמך הזה לא ברשימה שלכם. רעננו את הדף ונסו שוב.',
   busy: 'המערכת עמוסה כרגע. נסו שוב בעוד רגע.',
   serverError: 'משהו השתבש אצלנו. נסו שוב בעוד כמה דקות.',
 };
@@ -127,6 +128,8 @@ function handleHello_(request, watch) {
     answer.state = 'open';
     answer.periodLabel = periodLabel_(found.req.period);   // "אוקטובר 2026"
     answer.dueDate = found.cycle.dueDate ? formatDate_(new Date(found.cycle.dueDate)) : '';
+    answer.items = buildItemsView_(getRequestItems_(found.cycle.cycleId, found.req.requestId));
+    watch.lap('items');
   } else {
     // data-model.md 3.3: a client without a request in the open cycle, for example a
     // bimonthly client in an odd month.
@@ -138,8 +141,9 @@ function handleHello_(request, watch) {
   return answer;
 }
 
-// Data model, chapter 2, steps 4-10. Until stage 5, the file goes to the request's
-// "מסמך אחר", which does not change the status of the request (data-model.md 3.1).
+// Data model, chapter 2, steps 4-10. The page says which document the file belongs to
+// (request.docTypeId); the item becomes "התקבל" and the state of the request is calculated
+// again (data-model.md 3.1 and 3.2).
 // The stopwatch times each step (D29). The times reach the page and the Log tab.
 function handleUpload_(request, watch) {
   // Step 4: checks. If anything is wrong, nothing is saved.
@@ -161,11 +165,13 @@ function handleUpload_(request, watch) {
   }
   const found = findOpenRequest_(client);
   if (!found) return fail_('NO_REQUEST', MESSAGES.noRequest + nextRequestText_());
-  const docType = getDocTypes_()[UPLOAD_DOC_TYPE];
-  if (!docType) throw new Error('חסר סוג המסמך ' + UPLOAD_DOC_TYPE + ' בלשונית DocTypes. הריצו את setup.');
+  const docTypeId = String(request.docTypeId || OTHER_DOC_TYPE);
+  const docType = getDocTypes_()[docTypeId];
   const cycleId = found.cycle.cycleId;
   const req = found.req;
-  const itemId = req.requestId + '_' + UPLOAD_DOC_TYPE;
+  const itemId = req.requestId + '_' + docTypeId;
+  // The document must be in this client's list for this month. The rows are known from the cache.
+  if (!docType || !getCycleItemRows_(cycleId)[itemId]) return fail_('BAD_ITEM', MESSAGES.badItem);
   watch.lap('checks');
 
   let blob;
@@ -202,10 +208,12 @@ function handleUpload_(request, watch) {
     // Step 7: the item, a row in Uploads, and the request's last activity.
     item.record.status = 'received';
     item.record.file_count = (Number(item.record.file_count) || 0) + 1;
+    item.record.na_note = '';   // a file after "לא היה לי": the mark is cleared (data-model.md 3.1)
     item.record.updated_at = at;
     item.record.updated_by = 'client';
     item.record.last_seq = seq;
     writeRecordAt_('Items', item.row, item.record);
+    const items = updateCachedItem_(cycleId, req.requestId, docTypeId, item.record);
     const uploadId = itemId + '_' + pad2_(seq);
     appendRow_('Uploads', {
       upload_id: uploadId,
@@ -225,10 +233,17 @@ function handleUpload_(request, watch) {
       status: 'active',
     });
     watch.lap('uploads');
-    updateRecord_('Requests', req.row, 'request_id', req.requestId, {
-      last_activity: 'העלה ' + docType.nameHe,
-      last_activity_at: at,
-    });
+    // The state of the request is calculated again, in one place (data-model.md 3.2).
+    const reqRecord = readRecordAt_('Requests', req.row);
+    if (!reqRecord || String(reqRecord.request_id) !== req.requestId) {
+      throw new Error('השורה ' + req.row + ' בלשונית Requests כבר לא שייכת ל-' + req.requestId);
+    }
+    const requestStatus = computeRequestStatus_(items, String(reqRecord.status || ''));
+    if (requestStatus === 'submitted' && String(reqRecord.status) !== 'submitted') reqRecord.submitted_at = at;
+    reqRecord.status = requestStatus;
+    reqRecord.last_activity = 'העלה ' + docType.nameHe;
+    reqRecord.last_activity_at = at;
+    writeRecordAt_('Requests', req.row, reqRecord);
     watch.lap('request');
 
     // Step 9: the log. Its row holds the times up to here (it cannot time its own writing).
@@ -248,6 +263,8 @@ function handleUpload_(request, watch) {
     return {
       ok: true,
       uploadId: uploadId,
+      item: itemView_(items, docTypeId),
+      requestStatus: requestStatus,
       storedName: storedName,
       folderPath: clientFolderName_(client) + ' / ' + req.period,
       mimeType: mimeType,
@@ -399,6 +416,90 @@ function getRequestFolder_(client, req, cycleId) {
   return folder;
 }
 
+// The items of a cycle, by request: { requestId: [ { docTypeId, required, status, fileCount, naNote,
+// rejectReason } ] }. Kept in the cache; an upload updates its item in place (updateCachedItem_).
+function getCycleItems_(cycleId) {
+  return cached_('items:' + cycleId, function () {
+    const byRequest = {};
+    const prefix = cycleId + '_';
+    readTable_('Items').forEach(function (r) {
+      if (String(r.item_id).indexOf(prefix) !== 0) return;
+      const requestId = String(r.request_id);
+      (byRequest[requestId] = byRequest[requestId] || []).push({
+        docTypeId: String(r.doc_type_id),
+        required: isChecked_(r.required),
+        status: String(r.status || 'missing'),
+        fileCount: Number(r.file_count) || 0,
+        naNote: String(r.na_note || ''),
+        rejectReason: String(r.reject_reason || ''),
+      });
+    });
+    return byRequest;
+  });
+}
+
+function getRequestItems_(cycleId, requestId) {
+  return getCycleItems_(cycleId)[requestId] || [];
+}
+
+// After a write to the Items tab: the same change in the cache, so the next page that opens
+// does not have to read the whole tab again (D29). Returns the request's items.
+function updateCachedItem_(cycleId, requestId, docTypeId, record) {
+  const all = getCycleItems_(cycleId);
+  const list = all[requestId] = all[requestId] || [];
+  const fresh = {
+    docTypeId: docTypeId,
+    required: isChecked_(record.required),
+    status: String(record.status || 'missing'),
+    fileCount: Number(record.file_count) || 0,
+    naNote: String(record.na_note || ''),
+    rejectReason: String(record.reject_reason || ''),
+  };
+  const at = list.findIndex(function (i) { return i.docTypeId === docTypeId; });
+  if (at === -1) list.push(fresh); else list[at] = fresh;
+  putCached_('items:' + cycleId, all);
+  return list;
+}
+
+// What the client page sees of one document.
+function itemView_(items, docTypeId) {
+  const types = getDocTypes_();
+  const item = items.filter(function (i) { return i.docTypeId === docTypeId; })[0];
+  const type = types[docTypeId];
+  if (!item || !type) return null;
+  return {
+    docTypeId: docTypeId,
+    name: type.nameHe,
+    description: type.descriptionHe,
+    required: item.required,
+    other: docTypeId === OTHER_DOC_TYPE,
+    status: item.status,
+    fileCount: item.fileCount,
+    naNote: item.naNote,
+    rejectReason: item.rejectReason,
+  };
+}
+
+// The documents of the request in the order of DocTypes.sort_order. "מסמך אחר" is last.
+function buildItemsView_(items) {
+  const types = getDocTypes_();
+  return items
+    .filter(function (i) { return types[i.docTypeId]; })
+    .sort(function (a, b) { return types[a.docTypeId].sortOrder - types[b.docTypeId].sortOrder; })
+    .map(function (i) { return itemView_(items, i.docTypeId); });
+}
+
+// The state of a request, calculated in one place (data-model.md 3.2). "מסמך אחר" is not counted.
+function computeRequestStatus_(items, currentStatus) {
+  if (currentStatus === 'complete') return 'complete';   // only the office changes this
+  const counted = items.filter(function (i) { return i.docTypeId !== OTHER_DOC_TYPE; });
+  const closed = function (i) { return i.status === 'received' || i.status === 'not_applicable'; };
+  const required = counted.filter(function (i) { return i.required; });
+  if (required.length && required.every(closed)) return 'submitted';
+  if (counted.some(function (i) { return closed(i) || i.status === 'rejected'; })) return 'partial';
+  return 'not_started';
+}
+
 // The document types, by ID, from the cache.
 function getDocTypes_() {
   return cached_('docTypes', function () {
@@ -407,6 +508,7 @@ function getDocTypes_() {
       if (!r.doc_type_id) return;
       types[String(r.doc_type_id)] = {
         nameHe: String(r.name_he || ''),
+        descriptionHe: String(r.description_he || ''),
         fileLabel: String(r.file_label || ''),
         required: isChecked_(r.required),
         sortOrder: Number(r.sort_order) || 0,
@@ -440,6 +542,7 @@ function forgetModelCache_() {
   if (cycle) {
     forgetCached_('requests:' + cycle.cycleId);
     forgetCached_('itemRows:' + cycle.cycleId);
+    forgetCached_('items:' + cycle.cycleId);
   }
   ['openCycle', 'clients', 'settings', 'docTypes'].forEach(forgetCached_);
 }
@@ -621,6 +724,16 @@ function cached_(name, load) {
   }
   memo_[name] = value;
   return value;
+}
+
+// Replaces a cached value after the code changed it (instead of forgetting it).
+function putCached_(name, value) {
+  memo_[name] = value;
+  try {
+    CacheService.getScriptCache().put(cacheKey_(name), JSON.stringify(value), CONFIG.cacheSeconds);
+  } catch (err) {
+    forgetCached_(name);
+  }
 }
 
 function forgetCached_(name) {
@@ -876,6 +989,7 @@ const LAP_NAMES = {
   settings: 'הגדרות',
   lock: 'מנעול',
   item: 'פריט',
+  items: 'רשימת המסמכים',
   folder: 'תיקייה',
   save: 'שמירת הקובץ',        // in Drive
   uploads: 'רישום הקובץ',     // the row in Uploads
