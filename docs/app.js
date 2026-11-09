@@ -1,27 +1,31 @@
-/* Nelio · client page · stage 5.1: the upload itself
+/* Nelio · client page · stage 5.2: the full page
  *
  * 1. Reads the personal token from the link (#t=...).
  * 2. Asks the server ("hello") whether the link is valid, which month is open, and which
  *    documents the client has to send.
- * 3. Uploads the chosen files one after another ("upload"), each to the document it was chosen
- *    for. Before sending, a photo is shrunk on the phone (D29): a photo of 2-4 MB becomes a few
- *    hundred KB, and the sending is where most of the time goes.
+ * 3. Shows the documents as the client's folder (D38): a line per document, and under the line
+ *    that is open, what the client can do with it: photograph, choose files, or say "לא היה לי
+ *    מסמך כזה החודש".
+ * 4. Uploads the chosen files one after another ("upload"), each to the document it was chosen
+ *    for. Before sending, a photo is shrunk on the phone (D29).
+ * 5. When every required document is received or marked, the page says thank you, with the stamp.
  *
  * There is no byte-by-byte progress bar on purpose: listening to upload progress makes the
  * browser send a CORS "preflight" request first, and Apps Script cannot answer it. The bar
  * counts files, and inside the current file it moves by an estimate of the time (findings.md).
  *
- * The look of the list is temporary. The final look (the folder, D38) is stage 5.2.
+ * The link #t=...&debug=1 also shows the technical details of every upload (for the tests).
  */
 (function () {
   'use strict';
 
-  const PAGE_VERSION = '0.4.0';
+  const PAGE_VERSION = '0.5.0';
   const API_URL = String((window.NELIO_CONFIG && window.NELIO_CONFIG.apiUrl) || '').trim();
   const REQUEST_TIMEOUT_MS = 180000; // 3 minutes
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'];
   const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'pdf'];
   const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+  const OTHER_DOC_TYPE = 'OTHER';
 
   // Shrinking a photo. 2000 pixels on the long side is about 170 dpi on an A4 page: a receipt or
   // a bank statement stays readable. A photo that is already small is sent as it is.
@@ -38,6 +42,17 @@
   const BASE64_FACTOR = 4 / 3;
   const START_SPEED_BYTES_PER_SECOND = 150 * 1024;
 
+  const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט',
+    'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+
+  // Squares like a paper form (D38): checked, empty, with an X, and with a dash (not this month).
+  const ICONS = {
+    received: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8.5 12.5l2.5 2.5l4.5-5"/></svg>',
+    missing: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>',
+    rejected: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9.5 9.5l5 5m0-5l-5 5"/></svg>',
+    not_applicable: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8.5 12h7"/></svg>',
+  };
+
   const TEXT = {
     noServerTitle: 'השרת עוד לא מחובר',
     noServerText: 'חסרה כתובת השרת בקובץ config.js, או שיש בקובץ טעות.',
@@ -49,66 +64,114 @@
     offlineHint: 'לבדיקה: אם האינטרנט תקין, ודאו שהפריסה ב-Apps Script מוגדרת לגישה של "כל אחד" (Anyone).',
     errorTitle: 'משהו השתבש',
     badResponse: 'השרת החזיר תשובה לא צפויה. נסו שוב בעוד כמה דקות.',
-    greeting: 'שלום, ',
-    documentsFor: 'מסמכים ל',
-    until: 'עד',
+    noRequestTitle: 'שלום, ',
+
+    // The top of the page
+    titleOpen: 'המסמכים של {period}',
+    titleDone: 'תודה, קיבלנו הכול',
+    dueFuture: 'צריך עד {date}.',
+    dueToday: 'צריך עד היום.',
+    duePast: 'התאריך היה {date}.',
+    missingMany: 'חסרים עוד {n}.',
+    missingOne: 'חסר עוד מסמך אחד.',
+    subtitleDone: 'כל המסמכים של {period} אצלנו. נשלח אליכם אישור במייל. אם יש עוד משהו להוסיף, אפשר להמשיך כאן.',
+
+    // The documents
+    state: { missing: 'חסר', received: 'התקבל', rejected: 'לא קריא', not_applicable: 'לא היה החודש', optional: 'לא חובה' },
+    receivedMany: 'התקבל ({n} קבצים)',
+    rejectedPanel: 'נא להעלות שוב.',
+    rejectedReason: ' הסיבה: {reason}',
+    naPanel: 'סימנתם שלא היה לכם מסמך כזה החודש.',
+    naPanelNote: ' ההערה שלכם: {note}',
+    camera: 'צילום והעלאה',
+    cameraMore: 'הוספת צילום או עמוד',
+    cameraAgain: 'צילום והעלאה מחדש',
+    pickFiles: 'או בחירת תמונה או קובץ מהמכשיר',
+    notThisMonth: 'לא היה לי מסמך כזה החודש',
+    undoNa: 'בעצם יש לי, ביטול הסימון',
+    naLabel: 'רוצים להוסיף הערה? (לא חובה)',
+    naSubmit: 'לא היה לי החודש',
+    cancel: 'ביטול',
+
+    // The note to the office
+    noteOpen: 'יש משהו להגיד למשרד?',
+    noteSend: 'שליחה',
+    noteSent: 'ההערה נשלחה למשרד.',
+    noteEmpty: 'כתבו את ההערה ואז שלחו.',
+
+    // Uploading
     waiting: 'ממתין…',
     shrinking: 'מכווצים את התמונה…',
-    uploading: 'מעלה…',
+    uploading: 'מעלים…',
     received: 'התקבל',
+    retry: 'נסו שוב',
+    offline: 'אין חיבור לאינטרנט. כשהחיבור יחזור, אפשר לנסות שוב.',
     emptyFile: 'הקובץ ריק.',
     badType: 'סוג הקובץ לא נתמך. אפשר להעלות תמונה או קובץ PDF.',
-    tooBig: 'הקובץ גדול מדי ({size}). הגודל המקסימלי הוא {max} מגה-בייט.',
+    tooBig: 'הקובץ גדול מדי ({size}). הגודל המקסימלי הוא {max} מגה-בייט. אפשר לסרוק פחות עמודים או באיכות נמוכה יותר, או לשלוח את הקובץ למשרד: ',
     photoTooBig: 'התמונה גדולה מדי ({size}). נסו לצלם שוב, או לבחור תמונה קטנה יותר.',
     imageFailed: 'לא הצלחנו לעבד את התמונה. נסו לצלם שוב.',
     readError: 'לא הצלחנו לקרוא את הקובץ מהמכשיר. נסו לבחור אותו שוב.',
     timeout: 'ההעלאה לקחה יותר מדי זמן. בדקו את החיבור ונסו שוב.',
-    connectionLost: 'החיבור לשרת נכשל באמצע ההעלאה. בדקו את החיבור ונסו שוב.',
+    connectionLost: 'החיבור לשרת נכשל. בדקו את החיבור ונסו שוב.',
+    progressFile: 'מעלים קובץ {n} מתוך {total}',
+    allUploaded: 'כל הקבצים הועלו.',
+    someFailed: 'חלק מהקבצים לא הועלו. פרטים מתחת לכל מסמך.',
+
+    // Technical details (only with debug=1, and the line at the bottom)
     seconds: 'שניות',
     onServer: 'בשרת',
     opened: 'נפתח תוך',
     shrunk: 'כווצה מ-{from} ל-{to}',
-    camera: 'צילום',
-    pickFiles: 'בחירת קבצים',
-    state: { missing: 'חסר', received: 'התקבל', rejected: 'לא קריא, נא להעלות שוב', not_applicable: 'לא היה החודש' },
-    filesCount: 'קבצים: {n}',
-    progressFile: 'מעלים קובץ {n} מתוך {total}',
-    allUploaded: 'כל הקבצים הועלו.',
-    someFailed: 'חלק מהקבצים לא הועלו. פרטים מתחת לכל מסמך.',
-    missingLeft: 'חסרים עוד {n} מסמכים',
-    missingLeftOne: 'חסר עוד מסמך אחד',
-    allDone: 'כל המסמכים התקבלו',
   };
 
+  // Server answers after which trying again can help. Anything else needs a different file.
+  const RETRY_CODES = ['BUSY', 'SERVER_ERROR', 'BAD_FILE', 'BAD_RESPONSE'];
+
   const els = {
-    office: document.getElementById('office-name'),
-    loading: document.getElementById('view-loading'),
+    logo: document.getElementById('office-logo'),
     message: document.getElementById('view-message'),
     messageTitle: document.getElementById('message-title'),
     messageText: document.getElementById('message-text'),
     messageHint: document.getElementById('message-hint'),
     retry: document.getElementById('retry-button'),
-    upload: document.getElementById('view-upload'),
-    greeting: document.getElementById('greeting'),
-    period: document.getElementById('period-line'),
-    summary: document.getElementById('summary-line'),
+    page: document.getElementById('view-page'),
+    stamp: document.getElementById('stamp'),
+    title: document.getElementById('title'),
+    subtitle: document.getElementById('subtitle'),
     progress: document.getElementById('progress'),
     progressText: document.getElementById('progress-text'),
     progressFill: document.getElementById('progress-fill'),
+    tab: document.getElementById('folder-tab'),
     docs: document.getElementById('docs'),
+    officeNote: document.getElementById('office-note'),
+    noteOpen: document.getElementById('note-open'),
+    noteForm: document.getElementById('note-form'),
+    noteText: document.getElementById('note-text'),
+    noteSend: document.getElementById('note-send'),
+    noteCancel: document.getElementById('note-cancel'),
+    noteStatus: document.getElementById('note-status'),
     camera: document.getElementById('camera-input'),
     files: document.getElementById('files-input'),
     versions: document.getElementById('versions'),
   };
 
+  const params = readHashParams();
   const state = {
-    token: readToken(),
+    token: readToken(params),
+    debug: params.get('debug') === '1',
     maxFileMb: 10,             // replaced by the server's value (Settings > max_file_mb, D32)
+    officeEmail: '',
+    today: '',                 // "dd/mm/yyyy", the server's date
+    periodLabel: '',
+    dueDate: '',
     queue: Promise.resolve(),  // uploads run one after another
     firstOpen: true,           // the opening time is shown only for the first try, not after "נסו שוב"
     items: [],                 // the documents of the open month, as the server sent them
-    docEls: {},                // docTypeId -> { state, count, results }
+    docEls: {},                // docTypeId -> the elements of its line
     target: '',                // the document the next chosen files belong to
+    openDoc: '',               // the document whose line is open
+    wasDone: null,             // null until the first time the top of the page is painted
     speed: START_SPEED_BYTES_PER_SECOND,
     batch: { total: 0, done: 0, failed: 0 },
     current: null,             // { startedAt, estimateSeconds } of the file being sent
@@ -119,6 +182,9 @@
   els.retry.addEventListener('click', start);
   els.camera.addEventListener('change', onFilesChosen);
   els.files.addEventListener('change', onFilesChosen);
+  els.noteOpen.addEventListener('click', openNoteForm);
+  els.noteCancel.addEventListener('click', closeNoteForm);
+  els.noteForm.addEventListener('submit', sendNote);
   showVersions('');
   start();
 
@@ -128,7 +194,7 @@
     if (!isConfigured(API_URL)) return showMessage(TEXT.noServerTitle, TEXT.noServerText);
     if (!state.token) return showMessage(TEXT.noTokenTitle, TEXT.noTokenText);
 
-    show('loading');
+    show('page');
     const firstOpen = state.firstOpen;
     state.firstOpen = false;
     let res;
@@ -140,25 +206,21 @@
 
     if (res.ok && res.state === 'noRequest') {
       // A client with no request in the open month, for example bimonthly in an odd month.
-      if (res.officeName) els.office.textContent = res.officeName;
-      showMessage(TEXT.greeting + (res.businessName || ''), res.message);
+      showMessage(TEXT.noRequestTitle + (res.businessName || ''), res.message);
       showVersions(res.version);
     } else if (res.ok) {
       state.maxFileMb = Number(res.maxFileMb) || state.maxFileMb;
-      if (res.officeName) els.office.textContent = res.officeName;
-      els.greeting.textContent = TEXT.greeting + (res.businessName || '');
-      // "מסמכים לאוקטובר 2026 · עד 12/11/2026" (brief.md, the client page)
-      els.period.textContent = '';
-      if (res.periodLabel) {
-        els.period.appendChild(document.createTextNode(TEXT.documentsFor + res.periodLabel));
-        if (res.dueDate) {
-          els.period.appendChild(document.createTextNode(' · ' + TEXT.until + ' '));
-          els.period.appendChild(isolated(res.dueDate));
-        }
-      }
+      state.officeEmail = String(res.officeEmail || '');
+      state.today = String(res.today || '');
+      state.periodLabel = String(res.periodLabel || '');
+      state.dueDate = String(res.dueDate || '');
       state.items = Array.isArray(res.items) ? res.items : [];
-      renderDocs();
-      show('upload');
+      els.tab.textContent = '';
+      els.tab.appendChild(isolated(res.businessName || ''));
+      buildDocs();
+      paintTop();
+      els.officeNote.hidden = false;
+      els.page.setAttribute('aria-busy', 'false');
       // How long the page took to open, from the tap on the link (for the tests).
       // performance.now() counts from the moment the browser started loading the page.
       const openSeconds = firstOpen && window.performance && typeof performance.now === 'function'
@@ -171,41 +233,179 @@
     }
   }
 
+  // ---------- The top of the page ----------
+
+  // The title, the line under it, and the stamp. The stamp lands with a movement only when the
+  // last document was closed during this visit; a client who comes back sees it at rest.
+  function paintTop() {
+    const left = missingCount();
+    const done = state.items.length > 0 && left === 0;
+    const period = shortPeriod(state.periodLabel);
+    els.title.classList.remove('skeleton-text');
+    els.subtitle.classList.remove('skeleton-text');
+    if (done) {
+      els.title.textContent = TEXT.titleDone;
+      els.subtitle.textContent = TEXT.subtitleDone.replace('{period}', period);
+    } else {
+      els.title.textContent = TEXT.titleOpen.replace('{period}', period);
+      const parts = [];
+      const due = dueSentence();
+      if (due) parts.push(due);
+      if (state.items.length) parts.push(left === 1 ? TEXT.missingOne : TEXT.missingMany.replace('{n}', String(left)));
+      els.subtitle.textContent = parts.join(' ');
+    }
+    els.subtitle.hidden = !els.subtitle.textContent;
+
+    const justDone = done && state.wasDone === false;
+    els.stamp.hidden = !done;
+    els.stamp.classList.remove('animate');
+    if (justDone) {
+      void els.stamp.offsetWidth;      // lets the browser start the movement again
+      els.stamp.classList.add('animate');
+      scrollToTop();
+    }
+    state.wasDone = done;
+  }
+
+  function missingCount() {
+    return state.items.filter(function (i) {
+      return i.required && (i.status === 'missing' || i.status === 'rejected');
+    }).length;
+  }
+
+  // "אוקטובר 2026" is "אוקטובר" while the year is this year.
+  function shortPeriod(label) {
+    const year = (state.today.match(/(\d{4})$/) || [])[1];
+    return year ? String(label).replace(new RegExp(' ' + year + '$'), '') : String(label);
+  }
+
+  // "צריך עד 12 בנובמבר." / "צריך עד היום." / "התאריך היה 12 בנובמבר."
+  function dueSentence() {
+    const due = parseDate(state.dueDate);
+    if (!due) return '';
+    const today = parseDate(state.today);
+    let text = due.d + ' ב' + MONTHS[due.m - 1];
+    if (today && due.y !== today.y) text += ' ' + due.y;
+    if (today) {
+      const a = due.y * 10000 + due.m * 100 + due.d;
+      const b = today.y * 10000 + today.m * 100 + today.d;
+      if (a === b) return TEXT.dueToday;
+      if (a < b) return TEXT.duePast.replace('{date}', text);
+    }
+    return TEXT.dueFuture.replace('{date}', text);
+  }
+
+  function parseDate(text) {
+    const m = String(text || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    return m ? { d: Number(m[1]), m: Number(m[2]), y: Number(m[3]) } : null;
+  }
+
+  function scrollToTop() {
+    const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    try {
+      window.scrollTo({ top: 0, behavior: calm ? 'auto' : 'smooth' });
+    } catch (err) {
+      window.scrollTo(0, 0);
+    }
+  }
+
   // ---------- The list of documents ----------
 
-  function renderDocs() {
+  function buildDocs() {
     els.docs.textContent = '';
     state.docEls = {};
     state.items.forEach(function (item) {
-      const li = document.createElement('li');
-      const head = document.createElement('div');
-      const name = document.createElement('div');
-      const stateEl = document.createElement('div');
-      const desc = document.createElement('p');
-      const actions = document.createElement('div');
-      const results = document.createElement('ul');
-      head.className = 'doc-head';
-      name.className = 'doc-name';
-      name.textContent = item.name;
-      stateEl.className = 'doc-state';
-      desc.className = 'doc-desc';
-      desc.textContent = item.description || '';
-      desc.hidden = !item.description;
-      actions.className = 'doc-actions';
-      actions.appendChild(actionButton(TEXT.camera, 'button', function () { chooseFor(item.docTypeId, els.camera); }));
-      actions.appendChild(actionButton(TEXT.pickFiles, 'button secondary', function () { chooseFor(item.docTypeId, els.files); }));
-      results.className = 'results';
-      head.appendChild(name);
-      head.appendChild(stateEl);
-      li.appendChild(head);
-      li.appendChild(desc);
-      li.appendChild(actions);
-      li.appendChild(results);
-      els.docs.appendChild(li);
-      state.docEls[item.docTypeId] = { state: stateEl, results: results };
+      const d = createDoc(item);
+      els.docs.appendChild(d.li);
+      state.docEls[item.docTypeId] = d;
       paintItem(item);
     });
-    paintSummary();
+    // The first document that still needs something is open, so the client starts right there.
+    const first = state.items.filter(function (i) { return i.status === 'missing' || i.status === 'rejected'; })[0];
+    if (first) toggleDoc(first.docTypeId, true);
+  }
+
+  function createDoc(item) {
+    const id = item.docTypeId;
+    const li = make('li', 'doc');
+    const row = make('button', 'doc-row');
+    const box = make('span', 'box');
+    const name = make('span', 'doc-name');
+    const stateEl = make('span', 'doc-state');
+    const panel = make('div', 'doc-panel');
+    const desc = make('p', 'doc-desc');
+    const rejected = make('p', 'reject-reason');
+    const naText = make('p', 'na-text');
+    const actions = make('div', 'actions');
+    const results = make('ul', 'results');
+
+    row.type = 'button';
+    row.setAttribute('aria-expanded', 'false');
+    row.setAttribute('aria-controls', 'panel-' + id);
+    name.textContent = item.name;
+    panel.id = 'panel-' + id;
+    panel.hidden = true;
+    row.appendChild(box);
+    row.appendChild(name);
+    row.appendChild(stateEl);
+    row.addEventListener('click', function () { toggleDoc(id); });
+
+    const camera = actionButton('', 'button', function () { chooseFor(id, els.camera); });
+    const pick = actionButton(TEXT.pickFiles, 'linkish', function () { chooseFor(id, els.files); });
+    const notThisMonth = actionButton(TEXT.notThisMonth, 'linkish', function () { openNaForm(id); });
+    const undoNa = actionButton(TEXT.undoNa, 'linkish', function () { undoNotApplicable(id); });
+    actions.appendChild(camera);
+    actions.appendChild(pick);
+    actions.appendChild(notThisMonth);
+    actions.appendChild(undoNa);
+
+    // "לא היה לי": an optional note, then the button that sends it.
+    const naForm = make('div', 'na-form');
+    const naLabel = make('label', '');
+    const naInput = make('input', '');
+    const naError = make('p', 'form-error');
+    const naButtons = make('div', 'form-actions');
+    naLabel.textContent = TEXT.naLabel;
+    naLabel.setAttribute('for', 'na-' + id);
+    naInput.type = 'text';
+    naInput.id = 'na-' + id;
+    naInput.maxLength = 200;
+    naInput.autocomplete = 'off';
+    naError.hidden = true;
+    const naSubmit = actionButton(TEXT.naSubmit, 'button small', function () { submitNotApplicable(id); });
+    const naCancel = actionButton(TEXT.cancel, 'linkish', function () { closeNaForm(id); });
+    naButtons.appendChild(naSubmit);
+    naButtons.appendChild(naCancel);
+    naForm.appendChild(naLabel);
+    naForm.appendChild(naInput);
+    naForm.appendChild(naError);
+    naForm.appendChild(naButtons);
+    naForm.hidden = true;
+    naInput.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') { event.preventDefault(); submitNotApplicable(id); }
+    });
+
+    results.className = 'results';
+    panel.appendChild(desc);
+    panel.appendChild(rejected);
+    panel.appendChild(naText);
+    panel.appendChild(actions);
+    panel.appendChild(naForm);
+    panel.appendChild(results);
+    li.appendChild(row);
+    li.appendChild(panel);
+
+    return {
+      li: li, row: row, box: box, state: stateEl, panel: panel, desc: desc, rejected: rejected,
+      naText: naText, camera: camera, pick: pick, notThisMonth: notThisMonth, undoNa: undoNa,
+      naForm: naForm, naInput: naInput, naError: naError, naSubmit: naSubmit, results: results,
+    };
+  }
+
+  function make(tag, className) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    return el;
   }
 
   function actionButton(label, className, onClick) {
@@ -217,27 +417,168 @@
     return b;
   }
 
+  // One line open at a time.
+  function toggleDoc(docTypeId, forceOpen) {
+    Object.keys(state.docEls).forEach(function (id) {
+      const d = state.docEls[id];
+      const open = id === docTypeId && (forceOpen === true || state.openDoc !== docTypeId);
+      d.panel.hidden = !open;
+      d.row.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    state.openDoc = state.docEls[docTypeId] && !state.docEls[docTypeId].panel.hidden ? docTypeId : '';
+  }
+
   function chooseFor(docTypeId, input) {
     state.target = docTypeId;
     input.click();
   }
 
+  // Everything that depends on the state of one document: the square, the word, and what is under the line.
   function paintItem(item) {
-    const el = state.docEls[item.docTypeId];
-    if (!el) return;
-    let text = TEXT.state[item.status] || TEXT.state.missing;
-    if (item.fileCount > 0 && item.status === 'received') text += ' · ' + TEXT.filesCount.replace('{n}', String(item.fileCount));
-    el.state.textContent = text;
-    el.state.className = 'doc-state ' + (item.status || 'missing');
+    const d = state.docEls[item.docTypeId];
+    if (!d) return;
+    const status = item.status || 'missing';
+    const optionalEmpty = item.other && status === 'missing';
+    d.li.dataset.state = optionalEmpty ? 'optional' : status;
+    d.box.innerHTML = ICONS[status === 'missing' || optionalEmpty ? 'missing' : status] || ICONS.missing;
+
+    let word = optionalEmpty ? TEXT.state.optional : (TEXT.state[status] || TEXT.state.missing);
+    if (status === 'received' && item.fileCount > 1) word = TEXT.receivedMany.replace('{n}', String(item.fileCount));
+    d.state.textContent = word;
+
+    d.desc.textContent = item.description || '';
+    d.desc.hidden = !item.description;
+
+    const isRejected = status === 'rejected';
+    d.rejected.hidden = !isRejected;
+    d.rejected.textContent = isRejected
+      ? TEXT.rejectedPanel + (item.rejectReason ? TEXT.rejectedReason.replace('{reason}', item.rejectReason) : '')
+      : '';
+
+    const isNa = status === 'not_applicable';
+    d.naText.hidden = !isNa;
+    d.naText.textContent = isNa
+      ? TEXT.naPanel + (item.naNote ? TEXT.naPanelNote.replace('{note}', item.naNote) : '')
+      : '';
+
+    d.camera.textContent = isRejected ? TEXT.cameraAgain : status === 'received' ? TEXT.cameraMore : TEXT.camera;
+    d.camera.className = status === 'received' ? 'button outline' : 'button';
+    d.notThisMonth.hidden = item.other || !(status === 'missing' || isRejected);
+    d.undoNa.hidden = !isNa;
+    if (!(status === 'missing' || isRejected)) closeNaForm(item.docTypeId);
   }
 
-  // "חסרים עוד 2 מסמכים", from the required documents that are still missing or unreadable.
-  function paintSummary() {
-    const left = state.items.filter(function (i) {
-      return i.required && (i.status === 'missing' || i.status === 'rejected');
-    }).length;
-    els.summary.textContent = left === 0 ? TEXT.allDone
-      : left === 1 ? TEXT.missingLeftOne : TEXT.missingLeft.replace('{n}', String(left));
+  // The server's new view of one document (after an upload or "לא היה לי").
+  function applyItem(view) {
+    for (let i = 0; i < state.items.length; i++) {
+      if (state.items[i].docTypeId === view.docTypeId) state.items[i] = view;
+    }
+    paintItem(view);
+    paintTop();
+  }
+
+  // ---------- "לא היה לי מסמך כזה החודש" ----------
+
+  function openNaForm(docTypeId) {
+    const d = state.docEls[docTypeId];
+    if (!d) return;
+    d.naForm.hidden = false;
+    d.notThisMonth.hidden = true;
+    d.naError.hidden = true;
+    d.naInput.focus();
+  }
+
+  function closeNaForm(docTypeId) {
+    const d = state.docEls[docTypeId];
+    if (!d || d.naForm.hidden) return;
+    d.naForm.hidden = true;
+    d.naInput.value = '';
+    d.naError.hidden = true;
+    const item = state.items.filter(function (i) { return i.docTypeId === docTypeId; })[0];
+    if (item) d.notThisMonth.hidden = item.other || !(item.status === 'missing' || item.status === 'rejected');
+  }
+
+  async function submitNotApplicable(docTypeId) {
+    const d = state.docEls[docTypeId];
+    if (!d || d.naSubmit.disabled) return;
+    d.naSubmit.disabled = true;
+    d.naError.hidden = true;
+    try {
+      const res = await callServer({ action: 'markNa', token: state.token, docTypeId: docTypeId, note: d.naInput.value });
+      if (!res.ok) {
+        d.naError.textContent = res.message || TEXT.badResponse;
+        d.naError.hidden = false;
+      } else {
+        d.naForm.hidden = true;   // paintItem (below) puts everything else in order
+        d.naInput.value = '';
+        if (res.item) applyItem(res.item);
+      }
+    } catch (err) {
+      d.naError.textContent = TEXT.connectionLost;
+      d.naError.hidden = false;
+    } finally {
+      d.naSubmit.disabled = false;
+    }
+  }
+
+  async function undoNotApplicable(docTypeId) {
+    const d = state.docEls[docTypeId];
+    if (!d || d.undoNa.disabled) return;
+    d.undoNa.disabled = true;
+    try {
+      const res = await callServer({ action: 'unmarkNa', token: state.token, docTypeId: docTypeId });
+      if (res.ok && res.item) applyItem(res.item);
+      else d.naText.textContent = res.message || TEXT.badResponse;
+    } catch (err) {
+      d.naText.textContent = TEXT.connectionLost;
+    } finally {
+      d.undoNa.disabled = false;
+    }
+  }
+
+  // ---------- The note to the office ----------
+
+  function openNoteForm() {
+    els.noteForm.hidden = false;
+    els.noteStatus.hidden = true;
+    els.noteOpen.hidden = true;
+    els.noteOpen.setAttribute('aria-expanded', 'true');
+    els.noteText.focus();
+  }
+
+  function closeNoteForm() {
+    els.noteForm.hidden = true;
+    els.noteOpen.hidden = false;
+    els.noteOpen.setAttribute('aria-expanded', 'false');
+  }
+
+  async function sendNote(event) {
+    event.preventDefault();
+    if (els.noteSend.disabled) return;
+    const text = els.noteText.value.trim();
+    showNoteStatus(text ? '' : TEXT.noteEmpty, true);
+    if (!text) return;
+    els.noteSend.disabled = true;
+    try {
+      const res = await callServer({ action: 'note', token: state.token, note: text });
+      if (res.ok) {
+        els.noteText.value = '';
+        closeNoteForm();
+        showNoteStatus(TEXT.noteSent, false);
+      } else {
+        showNoteStatus(res.message || TEXT.badResponse, true);
+      }
+    } catch (err) {
+      showNoteStatus(TEXT.connectionLost, true);
+    } finally {
+      els.noteSend.disabled = false;
+    }
+  }
+
+  function showNoteStatus(text, isError) {
+    els.noteStatus.textContent = text;
+    els.noteStatus.hidden = !text;
+    els.noteStatus.style.color = isError ? 'var(--rejected)' : '';
   }
 
   // ---------- Uploading ----------
@@ -248,14 +589,17 @@
     input.value = ''; // so the same file can be chosen again
     const docTypeId = state.target;
     if (!docTypeId || !state.docEls[docTypeId]) return;
+    files.forEach(function (file) {
+      enqueue(file, addRow(file, docTypeId), docTypeId);
+    });
+  }
+
+  function enqueue(file, row, docTypeId) {
     // A new batch after the last one finished: the counters start again.
     if (state.batch.done >= state.batch.total) state.batch = { total: 0, done: 0, failed: 0 };
-    files.forEach(function (file) {
-      const row = addRow(file, docTypeId);
-      state.batch.total += 1;
-      paintProgress();
-      state.queue = state.queue.then(function () { return uploadOne(file, row, docTypeId); });
-    });
+    state.batch.total += 1;
+    paintProgress();
+    state.queue = state.queue.then(function () { return uploadOne(file, row, docTypeId); });
   }
 
   async function uploadOne(file, row, docTypeId) {
@@ -288,7 +632,8 @@
       }
     }
     if (blob.size > state.maxFileMb * 1024 * 1024) {
-      return fail(row, TEXT.tooBig.replace('{size}', formatSize(blob.size)).replace('{max}', String(state.maxFileMb)));
+      return fail(row, TEXT.tooBig.replace('{size}', formatSize(blob.size)).replace('{max}', String(state.maxFileMb)),
+        { office: true });
     }
     const shrinkSeconds = (now() - startedAt) / 1000;
 
@@ -301,6 +646,10 @@
       return fail(row, TEXT.readError);
     }
 
+    if (window.navigator && window.navigator.onLine === false) {
+      return fail(row, TEXT.offline, { retry: function () { retry(file, row, docTypeId); } });
+    }
+
     const sendStartedAt = now();
     let res;
     try {
@@ -308,17 +657,21 @@
         action: 'upload',
         token: state.token,
         docTypeId: docTypeId,
-        uploadKey: newUploadKey(),
+        uploadKey: row.uploadKey,   // the same key on every try of this file (stage 8 uses it)
         fileName: sentName,
         mimeType: blob.type || file.type || '',
         size: blob.size,
         data: data,
       });
     } catch (err) {
-      return fail(row, err && err.name === 'AbortError' ? TEXT.timeout : TEXT.connectionLost);
+      return fail(row, err && err.name === 'AbortError' ? TEXT.timeout : TEXT.connectionLost,
+        { retry: function () { retry(file, row, docTypeId); } });
     }
 
-    if (!res.ok) return fail(row, res.message || TEXT.badResponse);
+    if (!res.ok) {
+      const again = RETRY_CODES.indexOf(res.code) !== -1 ? { retry: function () { retry(file, row, docTypeId); } } : {};
+      return fail(row, res.message || TEXT.badResponse, again);
+    }
 
     const sendSeconds = (now() - sendStartedAt) / 1000;
     learnSpeed(blob.size, sendSeconds, res.serverMs);
@@ -326,9 +679,16 @@
     row.ok(res, file, blob, shrinkSeconds, (now() - startedAt) / 1000);
   }
 
-  function fail(row, text) {
+  function retry(file, row, docTypeId) {
+    row.reset();
+    state.batch.failed = Math.max(0, state.batch.failed - 1);
+    enqueue(file, row, docTypeId);
+  }
+
+  // options.retry: a function that tries the file again. options.office: add the office's address.
+  function fail(row, text, options) {
     state.batch.failed += 1;
-    row.error(text);
+    row.error(text, options || {});
   }
 
   // The checks before anything is done with the file, so the client hears about a problem at once.
@@ -349,14 +709,6 @@
     const type = String(file.type || '').toLowerCase();
     if (type) return type.indexOf('image/') === 0;
     return IMAGE_EXTENSIONS.indexOf(extensionOf(file.name)) !== -1;
-  }
-
-  function applyItem(view) {
-    for (let i = 0; i < state.items.length; i++) {
-      if (state.items[i].docTypeId === view.docTypeId) state.items[i] = view;
-    }
-    paintItem(view);
-    paintSummary();
   }
 
   // ---------- Shrinking a photo ----------
@@ -503,9 +855,8 @@
   // ---------- Screen ----------
 
   function show(name) {
-    els.loading.hidden = name !== 'loading';
+    els.page.hidden = name !== 'page';
     els.message.hidden = name !== 'message';
-    els.upload.hidden = name !== 'upload';
   }
 
   function showMessage(title, text, options) {
@@ -518,49 +869,68 @@
     show('message');
   }
 
-  // "דף 0.4.0 · שרת 0.4.0 · נפתח תוך 4.3 שניות (בשרת: 0.6)"
+  // "דף 0.5.0, שרת 0.5.0, נפתח תוך 4.3 שניות (בשרת: 0.6)"
   function showVersions(serverVersion, openSeconds, serverMs) {
-    let text = 'דף ' + PAGE_VERSION + (serverVersion ? ' · שרת ' + serverVersion : '');
+    let text = 'דף ' + PAGE_VERSION + (serverVersion ? ', שרת ' + serverVersion : '');
     if (openSeconds) {
-      text += ' · ' + TEXT.opened + ' ' + openSeconds.toFixed(1) + ' ' + TEXT.seconds;
+      text += ', ' + TEXT.opened + ' ' + openSeconds.toFixed(1) + ' ' + TEXT.seconds;
       if (serverMs) text += ' (' + TEXT.onServer + ': ' + (serverMs / 1000).toFixed(1) + ')';
     }
     els.versions.textContent = text;
   }
 
-  // One line per file, under its document: name, status, and (on success) technical details for the
-  // tests: the size before and after shrinking, the times, and the time of each step on the server.
+  // One line per file, under its document: name and status. With debug=1 also technical details
+  // for the tests: the size before and after shrinking, the times, and the time of each step on the server.
   function addRow(file, docTypeId) {
     const li = document.createElement('li');
     const name = document.createElement('div');
     const status = document.createElement('div');
+    const retryButton = actionButton(TEXT.retry, 'linkish retry', function () {});
     const meta = document.createElement('div');
     const steps = document.createElement('div');
     name.className = 'name';
     name.appendChild(isolated(file.name || 'קובץ'));
     status.className = 'status';
     status.textContent = TEXT.waiting;
+    retryButton.hidden = true;
     meta.className = 'meta';
     steps.className = 'meta';
     steps.hidden = true;
     li.appendChild(name);
     li.appendChild(status);
+    li.appendChild(retryButton);
     li.appendChild(meta);
     li.appendChild(steps);
     state.docEls[docTypeId].results.appendChild(li);
 
     return {
+      uploadKey: newUploadKey(),
+      reset: function () {
+        status.className = 'status';
+        status.textContent = TEXT.waiting;
+        retryButton.hidden = true;
+        meta.textContent = '';
+      },
       busy: function (text) {
         status.className = 'status busy';
         status.textContent = text;
       },
-      error: function (text) {
+      error: function (text, options) {
         status.className = 'status error';
         status.textContent = text;
+        if (options.office && state.officeEmail) {
+          const mail = isolated(state.officeEmail);
+          mail.dir = 'ltr';
+          status.appendChild(mail);
+        }
+        retryButton.hidden = typeof options.retry !== 'function';
+        retryButton.onclick = options.retry || null;
       },
       ok: function (res, original, sent, shrinkSeconds, totalSeconds) {
         status.className = 'status ok';
         status.textContent = TEXT.received;
+        retryButton.hidden = true;
+        if (!state.debug) return;
         let timing = totalSeconds.toFixed(1) + ' ' + TEXT.seconds;
         if (res.serverMs) timing += ' (' + TEXT.onServer + ': ' + (res.serverMs / 1000).toFixed(1) + ')';
         const parts = [];
@@ -584,7 +954,7 @@
   function setParts(el, parts) {
     el.textContent = '';
     parts.forEach(function (part, i) {
-      if (i > 0) el.appendChild(document.createTextNode(' · '));
+      if (i > 0) el.appendChild(document.createTextNode(', '));
       el.appendChild(typeof part === 'string' ? document.createTextNode(part) : part);
     });
   }
@@ -598,15 +968,17 @@
 
   // ---------- Small helpers ----------
 
-  function readToken() {
+  function readHashParams() {
     const hash = String(window.location.hash || '').replace(/^#/, '');
-    let token = '';
     try {
-      token = new URLSearchParams(hash).get('t') || '';
+      return new URLSearchParams(hash);
     } catch (err) {
-      token = '';
+      return new URLSearchParams('');
     }
-    token = token.trim();
+  }
+
+  function readToken(searchParams) {
+    const token = String(searchParams.get('t') || '').trim();
     return /^[A-Za-z0-9_-]{20,128}$/.test(token) ? token : '';
   }
 

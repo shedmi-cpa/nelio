@@ -24,7 +24,7 @@
 // ============================================================
 
 const CONFIG = {
-  version: '0.4.0',
+  version: '0.5.0',
   officeEmail: 'shedmi.cpa@gmail.com',   // setup() refuses to run from any other account
   timeZone: 'Asia/Jerusalem',
   clientPageUrl: 'https://shedmi-cpa.github.io/nelio/',
@@ -70,6 +70,9 @@ const MESSAGES = {
   badToken: 'הקישור הזה לא פעיל. לקבלת קישור חדש, פנו למשרד.',
   noRequest: 'אין כרגע מסמכים להעלות.',
   noFile: 'לא התקבל קובץ. נסו שוב.',
+  naNotAllowed: 'כבר התקבל קובץ למסמך הזה, ולכן אי אפשר לסמן שלא היה. אם הקובץ לא נכון, כתבו על זה הערה למשרד.',
+  naNotOptional: 'את המסמך הזה לא צריך לסמן. אפשר פשוט לא להעלות אותו.',
+  emptyNote: 'כתבו את ההערה ואז שלחו.',
   badType: 'סוג הקובץ לא נתמך. אפשר להעלות תמונה או קובץ PDF.',
   badFile: 'הקובץ הגיע פגום. נסו להעלות אותו שוב.',
   emptyFile: 'הקובץ ריק.',
@@ -102,6 +105,9 @@ function doPost(e) {
   try {
     if (action === 'hello') return json_(handleHello_(request, watch));
     if (action === 'upload') return json_(handleUpload_(request, watch));
+    if (action === 'markNa') return json_(handleMarkNa_(request, watch, true));
+    if (action === 'unmarkNa') return json_(handleMarkNa_(request, watch, false));
+    if (action === 'note') return json_(handleNote_(request, watch));
     return json_(fail_('BAD_REQUEST', MESSAGES.badRequest));
   } catch (err) {
     logError_('doPost:' + action, err);
@@ -120,6 +126,8 @@ function handleHello_(request, watch) {
     ok: true,
     businessName: client.businessName,
     officeName: getSetting_('office_name'),
+    officeEmail: getSetting_('office_email') || CONFIG.officeEmail,
+    today: formatDate_(now_()),   // the server's date: "is the due date past?" is decided from it
     maxFileMb: getMaxFileMb_(),
     version: CONFIG.version,
   };
@@ -128,7 +136,11 @@ function handleHello_(request, watch) {
     answer.state = 'open';
     answer.periodLabel = periodLabel_(found.req.period);   // "אוקטובר 2026"
     answer.dueDate = found.cycle.dueDate ? formatDate_(new Date(found.cycle.dueDate)) : '';
-    answer.items = buildItemsView_(getRequestItems_(found.cycle.cycleId, found.req.requestId));
+    const requestItems = getRequestItems_(found.cycle.cycleId, found.req.requestId);
+    answer.items = buildItemsView_(requestItems);
+    // The state of the request, from its items (the same function the uploads use). The page
+    // shows the thank-you screen when it is "submitted" or "complete".
+    answer.requestStatus = computeRequestStatus_(requestItems, '');
     watch.lap('items');
   } else {
     // data-model.md 3.3: a client without a request in the open cycle, for example a
@@ -234,17 +246,12 @@ function handleUpload_(request, watch) {
     });
     watch.lap('uploads');
     // The state of the request is calculated again, in one place (data-model.md 3.2).
-    const reqRecord = readRecordAt_('Requests', req.row);
-    if (!reqRecord || String(reqRecord.request_id) !== req.requestId) {
-      throw new Error('השורה ' + req.row + ' בלשונית Requests כבר לא שייכת ל-' + req.requestId);
-    }
-    const requestStatus = computeRequestStatus_(items, String(reqRecord.status || ''));
-    if (requestStatus === 'submitted' && String(reqRecord.status) !== 'submitted') reqRecord.submitted_at = at;
-    reqRecord.status = requestStatus;
-    reqRecord.last_activity = 'העלה ' + docType.nameHe;
-    reqRecord.last_activity_at = at;
-    writeRecordAt_('Requests', req.row, reqRecord);
+    const change = updateRequestAfterChange_(req, items, at, 'העלה ' + docType.nameHe);
+    const requestStatus = change.status;
     watch.lap('request');
+    // The request just reached "ממתין לבדיקה": the confirmation message (data-model.md 3.2).
+    if (change.justSubmitted) queueConfirmation_(client, req, cycleId, at);
+    watch.lap('message');
 
     // Step 9: the log. Its row holds the times up to here (it cannot time its own writing).
     logEvent_({
@@ -276,6 +283,148 @@ function handleUpload_(request, watch) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// "לא היה לי החודש" (stage 5.2), data-model.md 3.1. The client marks a document as not existing
+// this month, with an optional note, or takes the mark back. Only a missing or unreadable
+// document can be marked: the client never removes a file that was uploaded (3.1).
+function handleMarkNa_(request, watch, mark) {
+  const client = findClientByToken_(request.token);
+  if (!client) return fail_('BAD_TOKEN', MESSAGES.badToken);
+  const found = findOpenRequest_(client);
+  if (!found) return fail_('NO_REQUEST', MESSAGES.noRequest + nextRequestText_());
+  const docTypeId = String(request.docTypeId || '');
+  const docType = getDocTypes_()[docTypeId];
+  const cycleId = found.cycle.cycleId;
+  const req = found.req;
+  const itemId = req.requestId + '_' + docTypeId;
+  if (!docType || !getCycleItemRows_(cycleId)[itemId]) return fail_('BAD_ITEM', MESSAGES.badItem);
+  if (docTypeId === OTHER_DOC_TYPE) return fail_('NA_NOT_OPTIONAL', MESSAGES.naNotOptional);
+  const note = cleanNote_(request.note, 200);
+  watch.lap('checks');
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(CONFIG.lockTimeoutMs)) return fail_('BUSY', MESSAGES.busy);
+  watch.lap('lock');
+  try {
+    const at = now_();
+    const item = readItem_(cycleId, itemId);
+    if (!item) throw new Error('הפריט ' + itemId + ' לא נמצא בלשונית Items');
+    const current = String(item.record.status || 'missing');
+    if (mark && current !== 'missing' && current !== 'rejected' && current !== 'not_applicable') {
+      return fail_('NA_NOT_ALLOWED', MESSAGES.naNotAllowed);
+    }
+    if (!mark && current !== 'not_applicable' && current !== 'missing') {
+      return fail_('NA_NOT_ALLOWED', MESSAGES.naNotAllowed);
+    }
+    watch.lap('item');
+
+    item.record.status = mark ? 'not_applicable' : 'missing';
+    item.record.na_note = mark ? note : '';
+    if (mark) item.record.reject_reason = '';
+    item.record.updated_at = at;
+    item.record.updated_by = 'client';
+    writeRecordAt_('Items', item.row, item.record);
+    const items = updateCachedItem_(cycleId, req.requestId, docTypeId, item.record);
+    watch.lap('items');
+
+    const change = updateRequestAfterChange_(req, items, at,
+      (mark ? 'סימן "לא היה לי": ' : 'ביטל "לא היה לי": ') + docType.nameHe);
+    watch.lap('request');
+    if (change.justSubmitted) queueConfirmation_(client, req, cycleId, at);
+
+    logEvent_({
+      actor: 'client:' + client.clientId,
+      event: mark ? 'not_applicable' : 'not_applicable_cancel',
+      client_id: client.clientId,
+      request_id: req.requestId,
+      item_id: itemId,
+      details: mark
+        ? 'סומן "לא היה לי החודש": ' + docType.nameHe + (note ? '. הערה: ' + note : '')
+        : 'בוטל הסימון "לא היה לי החודש": ' + docType.nameHe,
+    });
+    SpreadsheetApp.flush();
+    watch.lap('log');
+    return {
+      ok: true,
+      item: itemView_(items, docTypeId),
+      requestStatus: change.status,
+      serverMs: watch.totalMs(),
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// "הערה למשרד" (stage 5.2): the client's last note to the office, kept in Requests.client_note.
+// Earlier notes stay in the Log (data-model.md, Requests). It does not change the state of the request.
+function handleNote_(request, watch) {
+  const client = findClientByToken_(request.token);
+  if (!client) return fail_('BAD_TOKEN', MESSAGES.badToken);
+  const found = findOpenRequest_(client);
+  if (!found) return fail_('NO_REQUEST', MESSAGES.noRequest + nextRequestText_());
+  const note = cleanNote_(request.note, 500);
+  if (!note) return fail_('EMPTY_NOTE', MESSAGES.emptyNote);
+  const req = found.req;
+  watch.lap('checks');
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(CONFIG.lockTimeoutMs)) return fail_('BUSY', MESSAGES.busy);
+  watch.lap('lock');
+  try {
+    const at = now_();
+    const record = readRecordAt_('Requests', req.row);
+    if (!record || String(record.request_id) !== req.requestId) {
+      throw new Error('השורה ' + req.row + ' בלשונית Requests כבר לא שייכת ל-' + req.requestId);
+    }
+    record.client_note = note;
+    record.last_activity = 'כתב הערה למשרד';
+    record.last_activity_at = at;
+    writeRecordAt_('Requests', req.row, record);
+    logEvent_({
+      actor: 'client:' + client.clientId,
+      event: 'client_note',
+      client_id: client.clientId,
+      request_id: req.requestId,
+      details: 'הערה למשרד: ' + note,
+    });
+    SpreadsheetApp.flush();
+    watch.lap('request');
+    return { ok: true, serverMs: watch.totalMs() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// The request after a change in one of its items: its state is calculated again, in one place
+// (data-model.md 3.2), and its last activity is updated. Call it inside the lock.
+// justSubmitted: it reached "ממתין לבדיקה" for the first time, so the confirmation goes out once.
+function updateRequestAfterChange_(req, items, at, activity) {
+  const record = readRecordAt_('Requests', req.row);
+  if (!record || String(record.request_id) !== req.requestId) {
+    throw new Error('השורה ' + req.row + ' בלשונית Requests כבר לא שייכת ל-' + req.requestId);
+  }
+  const before = String(record.status || '');
+  const status = computeRequestStatus_(items, before);
+  let justSubmitted = false;
+  if (status === 'submitted' && before !== 'submitted') {
+    justSubmitted = !record.submitted_at;
+    record.submitted_at = at;
+  }
+  record.status = status;
+  record.last_activity = activity;
+  record.last_activity_at = at;
+  writeRecordAt_('Requests', req.row, record);
+  return { status: status, justSubmitted: justSubmitted };
+}
+
+// A note from the client: plain text, one space between words, cut to a safe length.
+function cleanNote_(text, maxLength) {
+  return String(text === undefined || text === null ? '' : text)
+    .replace(/\s+/g, ' ')          // line breaks and tabs become one space
+    .replace(INVISIBLE_CHARS, '')   // hidden direction marks and control characters
+    .trim()
+    .slice(0, maxLength);
 }
 
 // ============================================================
@@ -994,6 +1143,7 @@ const LAP_NAMES = {
   save: 'שמירת הקובץ',        // in Drive
   uploads: 'רישום הקובץ',     // the row in Uploads
   request: 'עדכון הבקשה',
+  message: 'הודעת אישור',
   log: 'יומן',
 };
 

@@ -100,3 +100,67 @@ function messageValues_(message, world) {
 function missingText_(missing, names) {
   return missing.map(function (m) { return names[m.doc] + (m.rejected ? ' (לא קריא)' : ''); }).join(', ');
 }
+
+// ============================================================
+// The confirmation to the client (stage 5.2)
+// ============================================================
+
+// A client's request just reached "ממתין לבדיקה": the confirmation goes into the queue
+// (data-model.md 3.2 and 3.4). It is written from the template now, because it says nothing that
+// changes later. In demo mode it is recorded with its full text and not sent (D11). Real sending,
+// the quiet hours (send_after) and the few clients who get a real email in demo mode are stage 7.
+// Call it inside the lock.
+function queueConfirmation_(client, req, cycleId, at) {
+  const clientRow = readTable_('Clients').filter(function (r) {
+    return String(r.client_id).trim() === client.clientId;
+  })[0];
+  if (!clientRow) return;
+  const template = readTable_('Templates').filter(function (r) {
+    return String(r.template_id) === 'CONFIRMATION';
+  })[0] || defaultTemplates_().filter(function (t) { return t.template_id === 'CONFIRMATION'; })[0];
+  const values = messageValues_({ templateId: 'CONFIRMATION', ctx: {} }, {
+    client: clientRow, staff: null, request: { period: req.period }, cycleId: cycleId,
+    docNames: {}, clientsById: {}, officeName: getSetting_('office_name'),
+    link: buildClientLink_(client.token),
+  });
+  const demo = isChecked_(getSetting_('demo_mode'));
+  const messageId = nextMessageId_();
+  appendRow_('Messages', {
+    message_id: messageId,
+    created_at: at,
+    send_after: at,
+    template_id: 'CONFIRMATION',
+    cycle_id: cycleId,
+    request_id: req.requestId,
+    client_id: client.clientId,
+    to_email: String(clientRow.email || '').trim(),
+    subject: renderTemplate_(template.subject, values),
+    body: renderTemplate_(template.body, values),
+    status: demo ? 'simulated' : 'queued',
+    sent_at: demo ? at : '',
+    note: demo ? 'מצב הדגמה: נרשמה ולא נשלחה' : '',
+    created_by: 'system',
+  });
+  logEvent_({
+    actor: 'system',
+    event: 'message',
+    client_id: client.clientId,
+    request_id: req.requestId,
+    details: 'הודעת אישור ' + messageId + (demo ? ' נרשמה (מצב הדגמה)' : ' נכנסה לתור'),
+  });
+}
+
+// "M00413": one more than the highest number in the Messages tab.
+function nextMessageId_() {
+  const sheet = getSheet_('Messages');
+  const last = sheet.getLastRow();
+  let highest = 0;
+  if (last >= 2) {
+    const column = getHeaders_(sheet).indexOf('message_id') + 1;
+    sheet.getRange(2, column, last - 1, 1).getValues().forEach(function (row) {
+      const n = Number(String(row[0]).replace(/\D/g, '')) || 0;
+      if (n > highest) highest = n;
+    });
+  }
+  return 'M' + ('0000' + (highest + 1)).slice(-5);
+}

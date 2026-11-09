@@ -1,161 +1,249 @@
-/* Nelio · client page · stage 3.1 (skeleton).
-   Mobile first. The full design language comes in stage 4. */
+/* Nelio · client page · stage 5.2
+   The design language is D38 (rules.md): "deep sea on warm paper". The page looks like the
+   client's folder at the office: a tab with the name of the business, and inside it a sheet
+   with one line per document. Strong colors are for the states only.
+   No shadows, no gradients, no pills, one radius per kind of thing. Mobile first. */
 
 :root {
-  --bg: #f5f6f8;
-  --card: #ffffff;
-  --text: #1c2333;
-  --muted: #5d6677;
-  --line: #e2e5ea;
-  --accent: #1f5f8b;
-  --accent-soft: #e8f0f6;
-  --ok: #1d7a4e;
-  --error: #b42318;
-  --radius: 12px;
+  --sea: #1B4558;
+  --sea-dark: #14343F;
+  --paper: #F6F1E7;
+  --ink: #1E2A2E;
+  --ink-soft: #5E584D;
+  --sheet: #FFFDF8;
+  --folder: #E4D4AE;
+  --line: #D9D0BF;
+  --ok: #2D6A3E;
+  --missing: #8A5A12;
+  --rejected: #9B2C22;
+  --font-text: "Assistant", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  --font-title: "Frank Ruhl Libre", "David", Georgia, serif;
 }
 
 * { box-sizing: border-box; }
 
 [hidden] { display: none !important; }
 
+html { -webkit-text-size-adjust: 100%; }
+
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
-  font-size: 16px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: 17px;
   line-height: 1.5;
 }
 
-.top {
+.masthead { padding: 18px 20px 4px; max-width: 560px; margin: 0 auto; }
+.logo { display: block; height: 52px; width: auto; }
+
+main { max-width: 560px; margin: 0 auto; padding: 8px 14px 8px; }
+
+h1 {
+  font-family: var(--font-title);
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.25;
+  color: var(--sea);
+  margin: 0 0 4px;
+}
+
+p { margin: 0 0 8px; }
+.muted { color: var(--ink-soft); }
+.small { font-size: 0.875rem; }
+
+/* ---------- The top of the page ---------- */
+
+.intro { display: flex; align-items: center; gap: 14px; margin: 10px 6px 14px; }
+.intro-text { flex: 1; min-width: 0; }
+.subtitle { margin: 0; color: var(--ink-soft); }
+
+.stamp { flex-shrink: 0; transform: rotate(-6deg); opacity: 0.92; }
+.stamp.animate { animation: stamp-in 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+
+@keyframes stamp-in {
+  0%   { opacity: 0;    transform: scale(1.7) rotate(-16deg); }
+  55%  { opacity: 0.95; transform: scale(0.95) rotate(-4deg); }
+  100% { opacity: 0.92; transform: scale(1) rotate(-6deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp.animate { animation: none; }
+  .progress-fill { transition: none; }
+}
+
+.skeleton-text { background: rgba(94, 88, 77, 0.12); border-radius: 4px; color: transparent; }
+h1.skeleton-text { width: 70%; }
+p.skeleton-text { width: 55%; margin-top: 6px; }
+
+/* ---------- Progress ---------- */
+
+.progress { margin: 0 6px 12px; }
+.progress-text { font-size: 0.9rem; color: var(--sea); margin-bottom: 4px; }
+.progress-track { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; width: 0; background: var(--sea); transition: width 0.25s linear; }
+
+/* ---------- The folder ---------- */
+
+.folder-tab {
+  display: inline-block;
+  max-width: 78%;
+  background: var(--folder);
+  color: var(--ink);
+  font-weight: 700;
+  padding: 7px 18px 6px;
+  border-radius: 8px 8px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.folder-body {
+  background: var(--folder);
+  padding: 10px;
+  border-radius: 0 8px 8px 8px;   /* the tab is at the right, so the top right corner is square */
+}
+
+.sheet {
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.message { padding: 20px; margin: 14px 6px; }
+.message .button { margin-top: 10px; }
+
+/* ---------- The documents ---------- */
+
+.docs { list-style: none; margin: 0; padding: 0; }
+.doc { border-top: 1px solid var(--line); }
+.doc:first-child { border-top: 0; }
+
+.doc-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
-  background: var(--card);
-  border-bottom: 1px solid var(--line);
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 14px;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
 }
 
-.office { font-weight: 700; }
-.system { color: var(--muted); font-size: 0.875rem; }
-
-.badge {
-  flex-shrink: 0;
-  font-size: 0.8rem;
-  background: #fff3d1;
-  color: #6f5100;
-  padding: 2px 10px;
-  border-radius: 999px;
+.doc-row:focus-visible, .button:focus-visible, .linkish:focus-visible, textarea:focus-visible, input[type="text"]:focus-visible {
+  outline: 2px solid var(--sea);
+  outline-offset: 2px;
 }
 
-main {
-  max-width: 560px;
-  margin: 0 auto;
-  padding: 16px;
-}
+.box { flex-shrink: 0; width: 26px; height: 26px; color: var(--ink-soft); }
+.box svg { display: block; width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 
-.card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 20px;
-}
+.doc-name { flex: 1; min-width: 0; font-weight: 600; }
+.doc-state { flex-shrink: 0; font-size: 0.95rem; font-weight: 600; }
 
-h1 { font-size: 1.3rem; margin: 0 0 6px; }
-.period { margin: 0 0 10px; font-weight: 600; }
-.period:empty { display: none; }
-p { margin: 0 0 8px; }
-.muted { color: var(--muted); }
-.small { font-size: 0.85rem; }
+.doc[data-state="received"] .box, .doc[data-state="received"] .doc-state { color: var(--ok); }
+.doc[data-state="missing"] .box, .doc[data-state="missing"] .doc-state { color: var(--missing); }
+.doc[data-state="rejected"] .box, .doc[data-state="rejected"] .doc-state { color: var(--rejected); }
+.doc[data-state="not_applicable"] .box, .doc[data-state="not_applicable"] .doc-state { color: var(--ink-soft); }
+.doc[data-state="optional"] .box, .doc[data-state="optional"] .doc-state { color: var(--ink-soft); font-weight: 400; }
+
+.doc-panel { padding: 0 14px 16px 14px; padding-inline-start: 52px; }  /* lines up with the name, after the box */
+.doc-desc { color: var(--ink-soft); font-size: 0.9rem; margin: 0 0 10px; }
+.reject-reason { color: var(--rejected); font-weight: 600; margin: 0 0 10px; }
+.na-text { color: var(--ink-soft); margin: 0 0 10px; }
+
+.skeleton { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px; }
+.skeleton .box { background: rgba(94, 88, 77, 0.12); border-radius: 4px; }
+.skeleton .bar { flex: 1; max-width: 60%; height: 14px; background: rgba(94, 88, 77, 0.12); border-radius: 3px; }
+
+/* ---------- Buttons and links ---------- */
 
 .button {
   display: block;
   width: 100%;
-  margin-top: 12px;
-  padding: 14px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--accent);
+  min-height: 48px;
+  padding: 11px 16px;
+  border: 1px solid var(--sea);
+  border-radius: 6px;
+  background: var(--sea);
   color: #fff;
   font: inherit;
   font-weight: 600;
-  font-size: 1.05rem;
   text-align: center;
   cursor: pointer;
 }
 
-.button.secondary {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
+.button:active { background: var(--sea-dark); }
+.button:disabled { opacity: 0.6; cursor: default; }
+.button.outline { background: transparent; color: var(--sea); }
+.button.outline:active { background: rgba(27, 69, 88, 0.08); }
+.button.small { width: auto; min-height: 44px; padding: 9px 22px; }
 
-.button:active { opacity: 0.85; }
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  overflow: hidden;
-}
-
-.results {
-  list-style: none;
-  margin: 16px 0 0;
-  padding: 0;
-}
-
-.results li {
-  border-top: 1px solid var(--line);
+.linkish {
+  display: inline-block;
   padding: 10px 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: var(--sea);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
 }
 
-.results .name {
-  font-weight: 600;
-  overflow-wrap: anywhere;
+.actions { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
+.actions .button { margin-bottom: 4px; }
+
+/* ---------- Forms ---------- */
+
+label { display: block; font-weight: 600; margin-bottom: 4px; }
+
+input[type="text"], textarea {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;   /* below 16px, iPhone zooms the page when the field is touched */
 }
 
+textarea { resize: vertical; }
+
+.form-actions { display: flex; align-items: center; gap: 18px; margin-top: 8px; }
+.na-form { margin-top: 6px; }
+.form-error { color: var(--rejected); font-size: 0.9rem; margin: 6px 0 0; }
+
+/* ---------- Files of one document ---------- */
+
+.results { list-style: none; margin: 8px 0 0; padding: 0; }
+.results li { border-top: 1px solid var(--line); padding: 8px 0; }
+.results li:first-child { border-top: 0; }
+.results .name { font-weight: 600; overflow-wrap: anywhere; }
 .results .status { font-size: 0.95rem; }
-.results .status.busy { color: var(--accent); }
+.results .status.busy { color: var(--sea); }
 .results .status.ok { color: var(--ok); font-weight: 600; }
-.results .status.error { color: var(--error); }
+.results .status.error { color: var(--rejected); }
+.results .meta { color: var(--ink-soft); font-size: 0.8rem; overflow-wrap: anywhere; }
+.results .retry { padding: 4px 0; }
 
-.results .meta {
-  color: var(--muted);
-  font-size: 0.8rem;
-  overflow-wrap: anywhere;
-}
+/* ---------- The note to the office ---------- */
 
-.foot {
-  text-align: center;
-  color: var(--muted);
-  font-size: 0.8rem;
-  padding: 24px 16px;
-}
+.office-note { border-top: 1px solid var(--line); padding: 4px 14px 8px; }
+.note-status { color: var(--ok); font-weight: 600; margin: 0 0 6px; }
+.office-note form { padding: 6px 0 4px; }
 
-.versions { margin-top: 4px; opacity: 0.8; }
+/* ---------- The bottom of the page ---------- */
 
-/* Stage 5.1: a plain list of documents. The final look (the folder, D38) comes in 5.2. */
+.foot { text-align: center; color: var(--ink-soft); font-size: 0.8rem; padding: 22px 16px 28px; }
+.versions { margin-top: 2px; opacity: 0.75; }
 
-.summary { margin: 0 0 10px; color: var(--muted); }
-.summary:empty { display: none; }
-
-.progress { margin: 12px 0; }
-.progress-text { font-size: 0.9rem; color: var(--accent); margin-bottom: 4px; }
-.progress-track { height: 8px; background: var(--accent-soft); border-radius: 4px; overflow: hidden; }
-.progress-fill { height: 100%; width: 0; background: var(--accent); transition: width 0.25s linear; }
-
-.docs { list-style: none; margin: 12px 0; padding: 0; }
-.docs > li { border-top: 1px solid var(--line); padding: 12px 0; }
-.docs .doc-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-.docs .doc-name { font-weight: 700; }
-.docs .doc-state { font-size: 0.9rem; white-space: nowrap; }
-.docs .doc-state.missing { color: var(--muted); }
-.docs .doc-state.received { color: var(--ok); font-weight: 600; }
-.docs .doc-state.rejected { color: var(--error); font-weight: 600; }
-.docs .doc-state.not_applicable { color: var(--muted); }
-.docs .doc-desc { color: var(--muted); font-size: 0.85rem; margin: 2px 0 0; }
-.docs .doc-actions { display: flex; gap: 8px; margin-top: 8px; }
-.docs .doc-actions .button { margin-top: 0; padding: 10px; font-size: 0.95rem; }
-.docs .results { margin-top: 8px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
