@@ -155,6 +155,37 @@ const SCHEMA = {
 };
 
 // ============================================================
+// How the spreadsheet looks (D38, rules.md): the office reads it, so it is made for a human.
+// Only the look is here. Hiding a column never changes how the code reads it (by name).
+// ============================================================
+
+const SHEET_STYLE = {
+  sea: '#1B4558',          // header background
+  paper: '#FFFDF8',        // header text
+  folder: '#E4D4AE',       // tab colour of the settings tabs
+  font: 'Assistant',
+  // Technical columns the office does not need to read. setup() hides them; unhide by hand if needed.
+  hidden: {
+    Clients: ['token', 'token_created_at', 'drive_folder_id'],
+    Requests: ['drive_folder_id'],
+    Items: ['last_seq'],
+    Uploads: ['drive_file_id', 'file_hash', 'upload_key', 'seq'],
+  },
+  // Tabs the office changes by hand (settings). The rest are data the system writes.
+  settingsTabs: ['Settings', 'Staff', 'DocTypes', 'Profiles', 'Templates', 'Holidays'],
+  // Width in pixels by column name. A column not listed gets the width of its format.
+  widths: {
+    key: 190, value: 220, description: 420, description_he: 380, body: 460, subject: 260, details: 380,
+    name: 150, name_he: 160, business_name: 190, contact_name: 150, email: 230, to_email: 230,
+    doc_types: 380, applies_when: 300, role: 260, file_label: 170, frequency: 130, legal_type: 130,
+    original_name: 220, stored_name: 320, client_note: 260, last_activity: 220, na_note: 220,
+    reject_reason: 220, completion_note: 240, notes: 240, note: 240, actor: 120, event: 150,
+    request_id: 150, item_id: 190, upload_id: 130, message_id: 110,
+  },
+  formatWidths: { text: 130, datetime: 150, date: 105, number: 85, checkbox: 80 },
+};
+
+// ============================================================
 // Default rows
 // ============================================================
 
@@ -312,9 +343,40 @@ function ensureSheet_(ss, name, columns) {
     if (rows > 0) sheet.getRange(2, index + 1, rows, 1).setNumberFormat(numberFormat_(format));
   });
 
-  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#eef1f5');
-  sheet.setFrozenRows(1);
+  styleSheet_(sheet, name, columns, headers);
   forgetCached_('headers:' + name);
+}
+
+// The look of one tab: header in the sea colour, widths, hidden technical columns, tab colour.
+// Safe to run again: it sets the look, never the data.
+function styleSheet_(sheet, name, columns, headers) {
+  const st = SHEET_STYLE;
+  const formatOf = {};
+  columns.forEach(function (c) { formatOf[c[0]] = c[2]; });
+
+  sheet.getRange(1, 1, 1, headers.length)
+    .setBackground(st.sea).setFontColor(st.paper).setFontWeight('bold').setFontFamily(st.font)
+    .setVerticalAlignment('middle').setHorizontalAlignment('right');
+  sheet.setRowHeight(1, 32);
+  sheet.setFrozenRows(1);
+
+  const dataRows = sheet.getMaxRows() - 1;
+  if (dataRows > 0) {
+    // Same font as the header, and long text is cut at the cell edge so every row has the same height.
+    sheet.getRange(2, 1, dataRows, headers.length)
+      .setFontFamily(st.font).setVerticalAlignment('middle')
+      .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  }
+
+  const hidden = st.hidden[name] || [];
+  headers.forEach(function (header, i) {
+    const col = i + 1;
+    const width = st.widths[header] || st.formatWidths[formatOf[header]] || st.formatWidths.text;
+    sheet.setColumnWidth(col, width);
+    if (hidden.indexOf(header) !== -1) sheet.hideColumns(col);
+  });
+
+  sheet.setTabColor(st.settingsTabs.indexOf(name) !== -1 ? st.folder : st.sea);
 }
 
 // The tabs in the order of SCHEMA (the order of data-model.md).

@@ -24,7 +24,7 @@
 // ============================================================
 
 const CONFIG = {
-  version: '0.3.0',
+  version: '0.3.1',
   officeEmail: 'shedmi.cpa@gmail.com',   // setup() refuses to run from any other account
   timeZone: 'Asia/Jerusalem',
   clientPageUrl: 'https://shedmi-cpa.github.io/nelio/',

@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const PAGE_VERSION = '0.3.0';
+  const PAGE_VERSION = '0.3.1';
   const API_URL = String((window.NELIO_CONFIG && window.NELIO_CONFIG.apiUrl) || '').trim();
   const REQUEST_TIMEOUT_MS = 180000; // 3 minutes
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'];
