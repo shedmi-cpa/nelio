@@ -10,7 +10,7 @@
 (function () {
   'use strict';
 
-  const PAGE_VERSION = '0.1.1';
+  const PAGE_VERSION = '0.2.0';
   const API_URL = String((window.NELIO_CONFIG && window.NELIO_CONFIG.apiUrl) || '').trim();
   const REQUEST_TIMEOUT_MS = 180000; // 3 minutes
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'];
@@ -268,7 +268,8 @@
         let timing = seconds.toFixed(1) + ' ' + TEXT.seconds;
         if (res.serverMs) timing += ' (' + TEXT.onServer + ': ' + (res.serverMs / 1000).toFixed(1) + ')';
         setParts(meta, [
-          isolated(res.storedName),
+          // where the file was saved: "לקוח בדיקה (TEST) / 2026-10 / לקוח-בדיקה_2026-10_מסמך-אחר_01.jpg"
+          isolated(res.folderPath ? res.folderPath + ' / ' + res.storedName : res.storedName),
           isolated(res.mimeType || chosenFile.type),
           formatSize(res.sizeBytes || chosenFile.size),
           timing,
