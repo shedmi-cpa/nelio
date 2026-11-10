@@ -56,3 +56,44 @@ test('preflight permits only trusted origin',async()=>{
  const invalid=await handler(new Request('https://example.supabase.co',{method:'OPTIONS',headers:{Origin:'https://evil.test'}}));
  assert.equal(invalid.status,403);assert.equal(invalid.headers.get('Access-Control-Allow-Origin'),null);
 });
+
+test('client detail and file actions require safe identifiers and exact allowlist',()=>{
+ assert.deepEqual(parseAction({action:'clientDetail',requestId:'2026-10_C01'}),{action:'clientDetail',requestId:'2026-10_C01'});
+ assert.deepEqual(parseAction({action:'openFile',requestId:'2026-10_C01',uploadId:'U_17'}),{action:'openFile',requestId:'2026-10_C01',uploadId:'U_17'});
+ for(const input of [{action:'openFile',requestId:'x',uploadId:'../secret'},{action:'clientDetail',requestId:'x&client_id=eq.C02'},{action:'openFile',requestId:'x',uploadId:'x',override:'yes'}])assert.equal(parseAction(input),null);
+});
+test('foreign identity cannot fetch client detail or file URL',async()=>{
+ const calls=[],handler=createOfficeHandler(env,stub({...user,email:'not-office@gmail.com'},calls));
+ assert.equal((await handler(request({action:'clientDetail',requestId:'2026-10_C01'}))).status,403);
+ assert.equal((await handler(request({action:'openFile',requestId:'2026-10_C01',uploadId:'U_01'}))).status,403);
+ assert.equal(calls.length,2);
+});
+test('file access requires matching request, refuses pending and never exposes historical Drive IDs',async()=>{
+ const calls=[];
+ const f=async(url,init)=>{
+  calls.push(String(url));
+  if(String(url).includes('/auth/v1/user'))return Response.json(user);
+  if(String(url).includes('/requests?'))return Response.json([{request_id:'2026-10_C01',client_id:'C01',cycle_id:'2026-10'}]);
+  if(String(url).includes('/clients?'))return Response.json([{client_id:'C01',business_name:'דוגמה'}]);
+  if(String(url).includes('/uploads?'))return Response.json([{upload_id:'U_01',request_id:'2026-10_C01',storage_provider:'drive',drive_file_id:'SECRET_DRIVE_FILE',ingest_status:'ready'}]);
+  throw Error('unexpected');
+ };
+ const handler=createOfficeHandler(env,f),response=await handler(request({action:'openFile',requestId:'2026-10_C01',uploadId:'U_01'}));
+ assert.equal(response.status,501);assert.equal((await response.text()).includes('SECRET_DRIVE_FILE'),false);
+ assert.equal(calls.filter(u=>u.includes('/uploads?')).length,1);
+});
+test('Supabase file access signs only a ready object after office authorization and matching request',async()=>{
+ let signed=false;
+ const f=async(url,init)=>{
+  const s=String(url);
+  if(s.includes('/auth/v1/user'))return Response.json(user);
+  if(s.includes('/requests?'))return Response.json([{request_id:'2026-10_C01',client_id:'C01'}]);
+  if(s.includes('/clients?'))return Response.json([{client_id:'C01'}]);
+  if(s.includes('/uploads?'))return Response.json([{upload_id:'U_01',request_id:'2026-10_C01',storage_provider:'supabase',storage_path:'2026-10/C01/file.pdf',ingest_status:'ready'}]);
+  if(s.includes('/storage/v1/object/sign/')){signed=true;assert.equal(init.method,'POST');assert.equal(JSON.parse(init.body).expiresIn,60);return Response.json({signedURL:'/object/sign/nelio-documents/2026-10/C01/file.pdf?token=SIGNED'});}
+  throw Error('unexpected '+s);
+ };
+ const handler=createOfficeHandler(env,f),response=await handler(request({action:'openFile',requestId:'2026-10_C01',uploadId:'U_01'}));
+ assert.equal(response.status,200);assert.equal(signed,true);
+ const body=await response.json();assert.equal(body.expiresIn,60);assert.ok(body.url.includes('token=SIGNED'));assert.equal(body.url.includes('sb_secret_test'),false);
+});
