@@ -62,12 +62,16 @@
  }
  async function openFile(requestId,uploadId,button){
   button.disabled=true;const details=el('detail-message');details.textContent='';
-  try{const d=await officeCall('openFile',{requestId,uploadId});if(currentRequest!==requestId)return;const dest=new URL(d.url);if(dest.origin!==new URL(c.supabaseUrl).origin||!dest.pathname.startsWith('/storage/v1/object/sign/nelio-documents/'))throw Error('INVALID_URL');const a=document.createElement('a');a.href=dest.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent='פתיחת הקובץ (הקישור תקף לדקה)';a.className='file-signed-link';details.replaceChildren(a);}
-  catch(e){details.textContent=e.code==='DRIVE_NOT_CONFIGURED'?'מסמך ארכיון ב־Drive: נדרש חיבור פרטי של השרת לצפייה בו. אין גישה ציבורית.':'לא הצלחנו לפתוח את המסמך. נסו שוב.';}
+  try{const d=await officeCall('openFile',{requestId,uploadId});if(currentRequest!==requestId)return;if(d.driveBlob){
+    const localUrl=URL.createObjectURL(d.driveBlob);const a=document.createElement('a');a.href=localUrl;a.download='מסמך-לקוח';a.textContent='הורדת קובץ הארכיון (קישור מקומי)';details.replaceChildren(a);setTimeout(()=>URL.revokeObjectURL(localUrl),60000);return;
+   }
+   const dest=new URL(d.url);if(dest.origin!==new URL(c.supabaseUrl).origin||!dest.pathname.startsWith('/storage/v1/object/sign/nelio-documents/'))throw Error('INVALID_URL');const a=document.createElement('a');a.href=dest.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent='פתיחת הקובץ (הקישור תקף לדקה)';a.className='file-signed-link';details.replaceChildren(a);}
+  catch(e){details.textContent=e.code==='DRIVE_NOT_CONFIGURED'?'ארכיון Drive אינו מחובר עדיין. נדרש אישור גישה לחשבון השירות של המשרד.':e.code==='DRIVE_UNAVAILABLE'?'לא ניתן לקרוא את הקובץ מארכיון Drive. בדקו הרשאות תיקייה.':'לא הצלחנו לפתוח את המסמך. נסו שוב.';}
   finally{button.disabled=false;}
  }
  async function call(action,token,payload={}){
   const res=await fetch(c.officeApi,{method:'POST',mode:'cors',cache:'no-store',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token,apikey:c.publishableKey},body:JSON.stringify({action,...payload})});
+  if(res.ok&&action==='openFile'&&!res.headers.get('Content-Type')?.includes('application/json'))return {ok:true,driveBlob:await res.blob()};
   const data=await res.json().catch(()=>({}));
   if(!res.ok||!data.ok){const e=new Error(data.code||String(res.status));e.code=data.code||String(res.status);throw e;}return data;
  }
