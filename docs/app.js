@@ -19,7 +19,7 @@
 (function () {
   'use strict';
 
-  const PAGE_VERSION = '0.5.0';
+  const PAGE_VERSION = '0.6.0';
   const API_URL = String((window.NELIO_CONFIG && window.NELIO_CONFIG.apiUrl) || '').trim();
   const REQUEST_TIMEOUT_MS = 180000; // 3 minutes
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'];
@@ -126,7 +126,7 @@
   };
 
   // Server answers after which trying again can help. Anything else needs a different file.
-  const RETRY_CODES = ['BUSY', 'SERVER_ERROR', 'BAD_FILE', 'BAD_RESPONSE'];
+  const RETRY_CODES = ['BUSY', 'SERVER_ERROR', 'BAD_FILE', 'BAD_RESPONSE', 'UPLOAD_PENDING'];
 
   const els = {
     logo: document.getElementById('office-logo'),
@@ -657,7 +657,7 @@
         action: 'upload',
         token: state.token,
         docTypeId: docTypeId,
-        uploadKey: row.uploadKey,   // the same key on every try of this file (stage 8 uses it)
+        uploadKey: row.uploadKey,   // the server deduplicates retries using this key
         fileName: sentName,
         mimeType: blob.type || file.type || '',
         size: blob.size,
@@ -928,7 +928,7 @@
       },
       ok: function (res, original, sent, shrinkSeconds, totalSeconds) {
         status.className = 'status ok';
-        status.textContent = TEXT.received;
+        status.textContent = res.duplicateOf ? 'התקבל. שימו לב: קובץ זהה כבר הועלה בתקופה הזאת.' : TEXT.received;
         retryButton.hidden = true;
         if (!state.debug) return;
         let timing = totalSeconds.toFixed(1) + ' ' + TEXT.seconds;
@@ -983,7 +983,8 @@
   }
 
   function isConfigured(url) {
-    return /^https:\/\/script\.google\.com\/.+\/exec$/.test(url);
+    return /^https:\/\/[a-z0-9]+\.supabase\.co\/functions\/v1\/nelio-api$/.test(url) ||
+      /^https:\/\/script\.google\.com\/.+\/exec$/.test(url);
   }
 
   function newUploadKey() {

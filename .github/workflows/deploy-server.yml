@@ -1,7 +1,7 @@
 # Deploys the Nelio server (Google Apps Script) whenever its code changes on main.
 #
 # 1. clasp uploads apps-script/ to the Apps Script project named in .clasp.json.
-# 2. clasp deploys a new version to the existing web app, so its address (docs/config.js)
+# 2. clasp deploys a new version to the existing web app, so its address (supabase/legacy-config.js)
 #    never changes.
 # 3. The workflow asks the live server for its version, and fails if it is not the new one.
 #
@@ -9,15 +9,9 @@
 # CLASPRC_JSON (Settings > Secrets and variables > Actions). It is never in the code, and
 # GitHub hides it in the logs. To cut access: delete the secret, or remove "clasp" in the
 # Google account under Security > Third-party connections.
-name: Deploy server
+name: Legacy Apps Script (manual rollback only)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps-script/**'
-      - '.clasp.json'
-      - '.github/workflows/deploy-server.yml'
   workflow_dispatch:
 
 # One deployment at a time, in the order of the pushes.
@@ -47,11 +41,11 @@ jobs:
       - name: Read the server address and the new version
         id: info
         run: |
-          url=$(sed -n "s/.*apiUrl: *'\(https:\/\/script\.google\.com\/[^']*\/exec\)'.*/\1/p" docs/config.js | head -n 1)
+          url=$(sed -n "s/.*apiUrl: *'\(https:\/\/script\.google\.com\/[^']*\/exec\)'.*/\1/p" supabase/legacy-config.js | head -n 1)
           deployment=$(printf '%s' "$url" | sed -n 's#.*/macros/s/\([^/]*\)/exec$#\1#p')
           version=$(sed -n "s/^ *version: *'\([^']*\)'.*/\1/p" apps-script/Code.gs | head -n 1)
           if [ -z "$url" ] || [ -z "$deployment" ] || [ -z "$version" ]; then
-            echo "::error title=Missing details::Could not read the server address (docs/config.js) or the version (apps-script/Code.gs)."
+            echo "::error title=Missing details::Could not read the server address (supabase/legacy-config.js) or the version (apps-script/Code.gs)."
             exit 1
           fi
           echo "Server address: $url"

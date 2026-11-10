@@ -4,3 +4,15 @@
 
 # Local tools
 node_modules/
+
+# Private exports, local credentials and Supabase CLI state
+.env
+.env.*
+!.env.example
+supabase/.temp/
+supabase/.branches/
+private-migration/
+*.local.json
+
+__pycache__/
+*.pyc
