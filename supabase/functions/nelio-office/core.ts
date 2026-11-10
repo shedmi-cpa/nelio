@@ -1,10 +1,10 @@
 // Office-only read API. This server never trusts browser-provided user details.
 export const OFFICE_ORIGIN = 'https://shedmi-cpa.github.io';
 export const OFFICE_EMAIL = 'shedmi.cpa@gmail.com';
-export const VERSION = '0.6.1';
+export const VERSION = '0.6.2';
 export type OfficeEnv = { url:string; anonKey:string; serviceKey:string };
 type HttpFetch = (input:RequestInfo|URL, init?:RequestInit)=>Promise<Response>;
-type Action = {action:'session'}|{action:'overview';cycleId?:string};
+type Action = {action:'session'}|{action:'overview';cycleId?:string}|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string};
 type User = {id?:string;email?:string;email_confirmed_at?:string|null;app_metadata?:{providers?:string[]};identities?:{provider?:string}[]};
 
 function output(data:unknown,code:number,origin:string|null):Response {
@@ -25,8 +25,11 @@ export function parseAction(v:unknown):Action|null{
   if(x.cycleId===undefined)return {action:'overview'};
   if(typeof x.cycleId==='string'&&/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(x.cycleId))return {action:'overview',cycleId:x.cycleId};
  }
+ if(x.action==='clientDetail'&&Object.keys(x).every(k=>k==='action'||k==='requestId')&&validId(x.requestId))return {action:'clientDetail',requestId:x.requestId as string};
+ if(x.action==='openFile'&&Object.keys(x).every(k=>['action','requestId','uploadId'].includes(k))&&validId(x.requestId)&&validId(x.uploadId))return {action:'openFile',requestId:x.requestId as string,uploadId:x.uploadId as string};
  return null;
 }
+function validId(v:unknown):v is string{return typeof v==='string'&&v.length>0&&v.length<=100&&/^[A-Za-z0-9_-]+$/.test(v);}
 async function smallJson(r:Request):Promise<unknown>{
  const reader=r.body?.getReader();if(!reader)throw Error('bad body');
  let size=0;const chunks:Uint8Array[]=[];
@@ -71,6 +74,30 @@ export function createOfficeHandler(env:OfficeEnv,f:HttpFetch=fetch){
    if(!user)return output({ok:false,code:'UNAUTHORIZED'},401,origin);
    if(!isAuthorizedOfficeUser(user))return output({ok:false,code:'FORBIDDEN'},403,origin);
    if(action.action==='session')return output({ok:true,office:true,email:OFFICE_EMAIL,version:VERSION},200,origin);
+   if(action.action==='clientDetail'||action.action==='openFile'){
+    const reqRows=await table('requests','select=request_id,client_id,cycle_id,status,period,client_note&request_id=eq.'+encodeURIComponent(action.requestId)+'&limit=1',env,f);
+    const req=reqRows[0] as Record<string,unknown>|undefined;
+    if(!req)return output({ok:false,code:'NOT_FOUND'},404,origin);
+    const clientRows=await table('clients','select=client_id,business_name,frequency,profile_id,bookkeeper_id&client_id=eq.'+encodeURIComponent(String(req.client_id))+'&limit=1',env,f);
+    if(clientRows.length!==1)return output({ok:false,code:'NOT_FOUND'},404,origin);
+    if(action.action==='clientDetail'){
+     const items=await table('items','select=item_id,request_id,doc_type_id,required,status,file_count,na_note,reject_reason,updated_at&request_id=eq.'+encodeURIComponent(action.requestId)+'&limit=100',env,f);
+     const uploads=await table('uploads','select=upload_id,item_id,request_id,stored_name,original_name,mime_type,size_bytes,uploaded_at,status,storage_provider,ingest_status&request_id=eq.'+encodeURIComponent(action.requestId)+'&order=uploaded_at.desc&limit=250',env,f);
+     const docTypes=await table('doc_types','select=doc_type_id,name_he,sort_order&limit=100',env,f);
+     return output({ok:true,request:req,client:clientRows[0],items,uploads,docTypes},200,origin);
+    }
+    const uploadRows=await table('uploads','select=upload_id,request_id,storage_provider,storage_path,drive_file_id,ingest_status,stored_name,mime_type&upload_id=eq.'+encodeURIComponent(action.uploadId)+'&request_id=eq.'+encodeURIComponent(action.requestId)+'&limit=1',env,f);
+    const upload=uploadRows[0] as Record<string,unknown>|undefined;
+    if(!upload||upload.ingest_status!=='ready')return output({ok:false,code:'NOT_FOUND'},404,origin);
+    if(upload.storage_provider==='drive')return output({ok:false,code:'DRIVE_NOT_CONFIGURED'},501,origin);
+    if(upload.storage_provider!=='supabase'||typeof upload.storage_path!=='string'||!upload.storage_path||upload.storage_path.startsWith('/')||upload.storage_path.split('/').some(s=>s==='..'||s==='.')||upload.storage_path.length>500)return output({ok:false,code:'NOT_FOUND'},404,origin);
+    const signed=await f(env.url+'/storage/v1/object/sign/nelio-documents/'+upload.storage_path.split('/').map(encodeURIComponent).join('/'),{method:'POST',headers:{...adminHeaders(env.serviceKey),'Content-Type':'application/json'},body:JSON.stringify({expiresIn:60}),signal:AbortSignal.timeout(8000)});
+    if(!signed.ok)throw Error('storage_unavailable');
+    const signedBody=await signed.json() as {signedURL?:string;signedUrl?:string};
+    const relative=signedBody.signedURL||signedBody.signedUrl;
+    if(typeof relative!=='string'||!relative.startsWith('/object/sign/nelio-documents/')||relative.startsWith('//'))throw Error('invalid_signed_url');
+    return output({ok:true,url:env.url+'/storage/v1'+relative,expiresIn:60},200,origin);
+   }
    const cycles=await table('cycles','select=cycle_id,due_date,status&order=cycle_id.desc&limit=24',env,f);
    const rows=cycles as Array<{cycle_id:string;status:string}>;
    const selected=action.cycleId??rows.find(c=>c.status==='open')?.cycle_id??rows[0]?.cycle_id;
