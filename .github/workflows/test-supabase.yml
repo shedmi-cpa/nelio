@@ -1,0 +1,22 @@
+name: Test Supabase backend
+on:
+  pull_request:
+    paths: ['supabase/**', 'docs/**', '.github/workflows/test-supabase.yml']
+  push:
+    branches: [main]
+    paths: ['supabase/**', 'docs/**', '.github/workflows/test-supabase.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.5.6
+      - run: deno check supabase/functions/nelio-api/index.ts
+      - run: deno test supabase/tests/core_test.ts
+      - run: node --check docs/app.js
+      - run: node --test supabase/tests/client_config.test.cjs
+      - run: python -m py_compile supabase/tools/prepare-import.py supabase/tests/live_api.py

@@ -1,0 +1,15 @@
+project_id = "nelio"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+major_version = 17
+
+[functions.nelio-api]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/nelio-api/index.ts"
