@@ -10,9 +10,8 @@
  *    for. Before sending, a photo is shrunk on the phone (D29).
  * 5. When every required document is received or marked, the page says thank you, with the stamp.
  *
- * There is no byte-by-byte progress bar on purpose: listening to upload progress makes the
- * browser send a CORS "preflight" request first, and Apps Script cannot answer it. The bar
- * counts files, and inside the current file it moves by an estimate of the time (findings.md).
+ * The upload progress bar counts completed files and estimates time within the current file.
+ * It does not measure transferred bytes. The API is now Supabase Edge Functions (0.6.0).
  *
  * The link #t=...&debug=1 also shows the technical details of every upload (for the tests).
  */
@@ -61,7 +60,7 @@
     badTokenTitle: 'הקישור לא פעיל',
     offlineTitle: 'אין חיבור',
     offlineText: 'לא הצלחנו להגיע לשרת. בדקו את החיבור לאינטרנט ונסו שוב.',
-    offlineHint: 'לבדיקה: אם האינטרנט תקין, ודאו שהפריסה ב-Apps Script מוגדרת לגישה של "כל אחד" (Anyone).',
+    offlineHint: 'לבדיקה: אם האינטרנט תקין, נסו שוב בעוד כמה דקות. אם הבעיה נמשכת, פנו למשרד.',
     errorTitle: 'משהו השתבש',
     badResponse: 'השרת החזיר תשובה לא צפויה. נסו שוב בעוד כמה דקות.',
     noRequestTitle: 'שלום, ',
