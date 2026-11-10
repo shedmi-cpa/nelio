@@ -55,12 +55,12 @@ async function table(name:string,query:string,env:OfficeEnv,f:HttpFetch):Promise
 
 function b64url(bytes:Uint8Array):string{
  let raw='';for(const b of bytes)raw+=String.fromCharCode(b);
- return btoa(raw).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
+ return btoa(raw).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 async function driveToken(raw:string,f:HttpFetch):Promise<string>{
  const account=JSON.parse(raw) as {client_email?:string;private_key?:string;type?:string};
  if(account.type!=='service_account'||!account.client_email||!account.private_key?.includes('BEGIN PRIVATE KEY'))throw Error('invalid service account');
- const der=Uint8Array.from(atob(account.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\s/g,'')),c=>c.charCodeAt(0));
+ const der=Uint8Array.from(atob(account.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g,'')),c=>c.charCodeAt(0));
  const key=await crypto.subtle.importKey('pkcs8',der,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);
  const now=Math.floor(Date.now()/1000);
  const head=b64url(new TextEncoder().encode(JSON.stringify({alg:'RS256',typ:'JWT'})));
