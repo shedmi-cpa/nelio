@@ -66,7 +66,6 @@
   catch(e){details.textContent=e.code==='DRIVE_NOT_CONFIGURED'?'מסמך ארכיון ב־Drive: נדרש חיבור פרטי של השרת לצפייה בו. אין גישה ציבורית.':'לא הצלחנו לפתוח את המסמך. נסו שוב.';}
   finally{button.disabled=false;}
  }
- }
  async function call(action,token,payload={}){
   const res=await fetch(c.officeApi,{method:'POST',mode:'cors',cache:'no-store',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token,apikey:c.publishableKey},body:JSON.stringify({action,...payload})});
   const data=await res.json().catch(()=>({}));
