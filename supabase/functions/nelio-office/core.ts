@@ -2,7 +2,7 @@
 export const OFFICE_ORIGIN = 'https://shedmi-cpa.github.io';
 export const OFFICE_EMAIL = 'shedmi.cpa@gmail.com';
 export const VERSION = '0.6.2';
-export type OfficeEnv = { url:string; anonKey:string; serviceKey:string };
+export type OfficeEnv = { url:string; anonKey:string; serviceKey:string; driveCredentials?:string };
 type HttpFetch = (input:RequestInfo|URL, init?:RequestInit)=>Promise<Response>;
 type Action = {action:'session'}|{action:'overview';cycleId?:string}|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string};
 type User = {id?:string;email?:string;email_confirmed_at?:string|null;app_metadata?:{providers?:string[]};identities?:{provider?:string}[]};
@@ -52,6 +52,28 @@ async function table(name:string,query:string,env:OfficeEnv,f:HttpFetch):Promise
  if(!r.ok)throw Error('database_unavailable');
  const value:unknown=await r.json();if(!Array.isArray(value))throw Error('bad data');return value;
 }
+
+function b64url(bytes:Uint8Array):string{
+ let raw='';for(const b of bytes)raw+=String.fromCharCode(b);
+ return btoa(raw).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
+}
+async function driveToken(raw:string,f:HttpFetch):Promise<string>{
+ const account=JSON.parse(raw) as {client_email?:string;private_key?:string;type?:string};
+ if(account.type!=='service_account'||!account.client_email||!account.private_key?.includes('BEGIN PRIVATE KEY'))throw Error('invalid service account');
+ const der=Uint8Array.from(atob(account.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\s/g,'')),c=>c.charCodeAt(0));
+ const key=await crypto.subtle.importKey('pkcs8',der,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);
+ const now=Math.floor(Date.now()/1000);
+ const head=b64url(new TextEncoder().encode(JSON.stringify({alg:'RS256',typ:'JWT'})));
+ const claim=b64url(new TextEncoder().encode(JSON.stringify({iss:account.client_email,scope:'https://www.googleapis.com/auth/drive.readonly',aud:'https://oauth2.googleapis.com/token',iat:now,exp:now+3600})));
+ const payload=head+'.'+claim;
+ const sig=await crypto.subtle.sign('RSASSA-PKCS1-v1_5',key,new TextEncoder().encode(payload));
+ const assertion=payload+'.'+b64url(new Uint8Array(sig));
+ const r=await f('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion}).toString(),signal:AbortSignal.timeout(8000)});
+ if(!r.ok)throw Error('drive token failed');
+ const data=await r.json() as {access_token?:string};
+ if(!data.access_token)throw Error('missing drive token');return data.access_token;
+}
+
 export function createOfficeHandler(env:OfficeEnv,f:HttpFetch=fetch){
  return async(request:Request):Promise<Response>=>{
   const origin=request.headers.get('Origin');
@@ -89,7 +111,18 @@ export function createOfficeHandler(env:OfficeEnv,f:HttpFetch=fetch){
     const uploadRows=await table('uploads','select=upload_id,request_id,storage_provider,storage_path,drive_file_id,ingest_status,stored_name,mime_type&upload_id=eq.'+encodeURIComponent(action.uploadId)+'&request_id=eq.'+encodeURIComponent(action.requestId)+'&limit=1',env,f);
     const upload=uploadRows[0] as Record<string,unknown>|undefined;
     if(!upload||upload.ingest_status!=='ready')return output({ok:false,code:'NOT_FOUND'},404,origin);
-    if(upload.storage_provider==='drive')return output({ok:false,code:'DRIVE_NOT_CONFIGURED'},501,origin);
+    if(upload.storage_provider==='drive'){
+     if(!env.driveCredentials)return output({ok:false,code:'DRIVE_NOT_CONFIGURED'},501,origin);
+     if(typeof upload.drive_file_id!=='string'||!(/^[A-Za-z0-9_-]{10,150}$/.test(upload.drive_file_id)))return output({ok:false,code:'NOT_FOUND'},404,origin);
+     let token:string;
+     try{token=await driveToken(env.driveCredentials,f);}catch{return output({ok:false,code:'DRIVE_UNAVAILABLE'},503,origin);}
+     const file=await f('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(upload.drive_file_id)+'?alt=media&supportsAllDrives=true',{method:'GET',headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(20000)});
+     if(!file.ok||!file.body)return output({ok:false,code:'DRIVE_UNAVAILABLE'},503,origin);
+     const mime=typeof upload.mime_type==='string'&&/^(application\/pdf|image\/(jpeg|png|webp|heic|heif))$/.test(upload.mime_type)?upload.mime_type:'application/octet-stream';
+     const headers:Record<string,string>={'Content-Type':mime,'Content-Disposition':'attachment; filename="nelio-document"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Vary':'Origin'};
+     if(origin===OFFICE_ORIGIN)headers['Access-Control-Allow-Origin']=OFFICE_ORIGIN;
+     return new Response(file.body,{status:200,headers});
+    }
     if(upload.storage_provider!=='supabase'||typeof upload.storage_path!=='string'||!upload.storage_path||upload.storage_path.startsWith('/')||upload.storage_path.split('/').some(s=>s==='..'||s==='.')||upload.storage_path.length>500)return output({ok:false,code:'NOT_FOUND'},404,origin);
     const signed=await f(env.url+'/storage/v1/object/sign/nelio-documents/'+upload.storage_path.split('/').map(encodeURIComponent).join('/'),{method:'POST',headers:{...adminHeaders(env.serviceKey),'Content-Type':'application/json'},body:JSON.stringify({expiresIn:60}),signal:AbortSignal.timeout(8000)});
     if(!signed.ok)throw Error('storage_unavailable');
