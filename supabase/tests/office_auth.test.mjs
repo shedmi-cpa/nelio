@@ -97,3 +97,33 @@ test('Supabase file access signs only a ready object after office authorization 
  assert.equal(response.status,200);assert.equal(signed,true);
  const body=await response.json();assert.equal(body.expiresIn,60);assert.ok(body.url.includes('token=SIGNED'));assert.equal(body.url.includes('sb_secret_test'),false);
 });
+
+test('unknown request and mismatched upload cannot yield a signed URL',async()=>{
+ const calls=[];
+ const fake=async(url)=>{
+  const s=String(url);calls.push(s);
+  if(s.includes('/auth/v1/user'))return Response.json(user);
+  if(s.includes('/requests?'))return Response.json([{request_id:'2026-10_C01',client_id:'C01'}]);
+  if(s.includes('/clients?'))return Response.json([{client_id:'C01'}]);
+  if(s.includes('/uploads?'))return Response.json([]);
+  throw Error('must not sign');
+ };
+ const h=createOfficeHandler(env,fake);
+ const r=await h(request({action:'openFile',requestId:'2026-10_C01',uploadId:'DIFFERENT'}));
+ assert.equal(r.status,404);
+ assert.equal(calls.some(s=>s.includes('/storage/v1/object/sign/')),false);
+});
+test('pending upload does not receive a signed URL',async()=>{
+ const calls=[];
+ const fake=async(url)=>{
+  const s=String(url);calls.push(s);
+  if(s.includes('/auth/v1/user'))return Response.json(user);
+  if(s.includes('/requests?'))return Response.json([{request_id:'R1',client_id:'C01'}]);
+  if(s.includes('/clients?'))return Response.json([{client_id:'C01'}]);
+  if(s.includes('/uploads?'))return Response.json([{upload_id:'U_01',storage_provider:'supabase',storage_path:'file.pdf',ingest_status:'pending'}]);
+  throw Error('unexpected');
+ };
+ const h=createOfficeHandler(env,fake);
+ assert.equal((await h(request({action:'openFile',requestId:'R1',uploadId:'U_01'}))).status,404);
+ assert.equal(calls.some(s=>s.includes('/storage/v1/object/sign/')),false);
+});
