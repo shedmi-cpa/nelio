@@ -62,7 +62,7 @@
  }
  async function openFile(requestId,uploadId,button){
   button.disabled=true;const details=el('detail-message');details.textContent='';
-  try{const d=await officeCall('openFile',{requestId,uploadId});if(currentRequest!==requestId)return;const dest=new URL(d.url);if(dest.origin!==new URL(c.supabaseUrl).origin||!dest.pathname.startsWith('/storage/v1/object/sign/nelio-documents/'))throw Error('INVALID_URL');const a=document.createElement('a');a.href=dest.href;a.target='_blank';a.rel='noopener noreferrer';a.click();}
+  try{const d=await officeCall('openFile',{requestId,uploadId});if(currentRequest!==requestId)return;const dest=new URL(d.url);if(dest.origin!==new URL(c.supabaseUrl).origin||!dest.pathname.startsWith('/storage/v1/object/sign/nelio-documents/'))throw Error('INVALID_URL');const a=document.createElement('a');a.href=dest.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent='פתיחת הקובץ (הקישור תקף לדקה)';a.className='file-signed-link';details.replaceChildren(a);}
   catch(e){details.textContent=e.code==='DRIVE_NOT_CONFIGURED'?'מסמך ארכיון ב־Drive: נדרש חיבור פרטי של השרת לצפייה בו. אין גישה ציבורית.':'לא הצלחנו לפתוח את המסמך. נסו שוב.';}
   finally{button.disabled=false;}
  }
