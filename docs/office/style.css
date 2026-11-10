@@ -13,3 +13,27 @@ button{font:inherit;cursor:pointer;border-radius:3px}button:disabled{cursor:wait
 .sheet{background:var(--sheet);border:1px solid var(--line);padding:23px 27px}.table-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.table-heading h2{margin:0}.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:right}th{font-size:.9rem;font-weight:700;color:var(--sea);border-bottom:1px solid var(--line);padding:12px 10px}td{padding:13px 10px;border-bottom:1px solid #e9e2d5}td:first-child{font-weight:700}tbody tr:last-child td{border-bottom:0}.status{font-weight:700;color:var(--muted)}.status.complete{color:var(--ok)}.status.partial{color:var(--missing)}.status.rejected{color:var(--rejected)}
 footer{font-size:.82rem;text-align:center;color:var(--muted);border-top:1px solid var(--line);padding:16px}
 @media(max-width:720px){.top,main{padding-inline:18px}.top{padding-top:14px}.brand{gap:10px}.brand span{font-size:.85rem}.summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.summary article{padding:14px}.summary article strong{font-size:2.25rem}.heading-row{align-items:start}.sheet{padding:17px 12px}.login{padding:25px 21px}}
+
+/* Stage 6.2: restrained filters and an in-page document folder. */
+.filters{display:grid;grid-template-columns:minmax(200px,1.5fr) repeat(3,minmax(130px,1fr));gap:12px;align-items:end;margin:8px 0 19px}
+.filters label{display:grid;gap:5px;font-size:.86rem;color:var(--muted)}
+.filters input,.filters select{width:100%;min-width:0;padding:10px 12px;font:inherit;border:1px solid var(--line);background:var(--sheet);color:var(--ink);border-radius:2px}
+.filters input:focus-visible{outline:3px solid #6697b2;outline-offset:2px}
+.name-cell{white-space:nowrap}.number{font-variant-numeric:tabular-nums}
+.text-button{padding:5px 0;border:0;background:transparent;color:var(--sea);font-weight:700;text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
+.text-button:hover,.doc-link:hover{color:#113140}.empty{padding:28px 10px;color:var(--muted);font-weight:400!important;text-align:center}
+.detail{margin-top:24px;scroll-margin-top:24px}
+.detail-header{display:flex;gap:20px;justify-content:space-between;align-items:start;padding-bottom:15px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.detail-header h2{margin:0 0 4px}.detail h3{font-family:'Frank Ruhl Libre',Georgia,serif;color:var(--sea);font-size:1.3rem;margin:21px 0 10px}
+.detail .client-note{padding:10px 14px;border-right:2px solid var(--line);margin-top:15px;background:var(--paper);color:var(--ink)}
+.doc-list{display:grid;gap:13px}.doc-item{padding:15px 18px;border:1px solid var(--line);background:var(--sheet)}
+.doc-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.doc-heading h4{font-size:1.08rem;margin:0;color:var(--ink)}.doc-status{font-weight:700;font-size:.92rem;white-space:nowrap}
+.doc-status.received{color:var(--ok)}.doc-status.missing{color:var(--missing)}.doc-status.rejected{color:var(--rejected)}
+.doc-status.not_applicable{color:var(--muted)}.doc-note{font-size:.92rem;color:var(--rejected);margin:7px 0 12px}
+.file-row{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--line);padding:12px 0}
+.file-info{min-width:0;display:grid;gap:2px}.file-info strong{font-size:.93rem;overflow-wrap:anywhere}
+.file-info span{font-size:.81rem}.file-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:end}
+.doc-link{font-weight:700;color:var(--sea);white-space:nowrap;text-decoration:underline;text-underline-offset:3px}
+@media(max-width:900px){.filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.filters{grid-template-columns:1fr}.detail-header,.file-row{align-items:start;flex-direction:column}.file-actions{justify-content:start}.doc-item{padding:12px}.detail{padding:17px 13px}}
