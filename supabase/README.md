@@ -63,12 +63,10 @@ node --test supabase/tests/client_config.test.cjs
 - `legacy-config.js` records the previous endpoint for emergency rollback. Restoring it alone does **not** reconcile uploads/notes created after cutover; first preserve and reconcile those changes. Never run both backends as simultaneous writable sources.
 - The legacy deployment workflow is manual only. The former clasp secret is not used by Supabase; removing it is a separate account cleanup step.
 
-## Cutover hold
+## Cutover status (2026-11-10)
 
-The package was applied to `migration/supabase-0-6-0`, based on commit `9581afc902e64c450bd812dd34176a01da44891a`. GitHub branch creation now succeeds. The PR to `main` must remain open with no merge or auto-merge until changes in the legacy sheet since the snapshot have been checked and reconciled as needed. The public Pages frontend still uses Apps Script.
-
-The package's client startup guard accepted only Apps Script URLs. It now accepts the Supabase `nelio-api` endpoint too; the startup regression tests cover both configurations and invalid endpoints.
-
-Current verification: Deno type check and 5 tests, 5 Node client startup tests, JavaScript syntax, Python compilation, all 13 transactional SQL assertions, and a mocked Chromium smoke check passed. SQL changes were rolled back and no QA_SQL records remain. The opt-in HTTP/Storage test was not rerun: its dedicated QA token is unavailable and QA_MIGRATION is disabled. Physical-phone checks remain pending.
-
-Before publishing, compare the legacy sheet with the imported snapshot and reconcile any changes since the export. The importer is for an empty database and must not be rerun blindly on the already imported database. No automated incremental synchronization exists yet.
+- PR #1 was squash-merged to `main` at `e26a12a6c0b0154632682b3516edb9439dd54430` by explicit user direction (decision D44). The versioned website source now selects the deployed `nelio-api` endpoint.
+- Before merge, six live legacy Sheet row counts matched the corresponding imported snapshot totals: 60 clients, 158 requests, 900 items, 1,028 uploads, 494 messages and 1,241 log entries. **No row-by-row or field-level delta check was done**, per D44. Keep legacy data and archive for recovery; do not destroy or blindly re-import it.
+- The backend deployment already existed and did not require a new database migration at cutover. GitHub Pages publication and a physical-device smoke test still need independent verification. Do not declare stage 5 complete before the physical test.
+- Historic Drive files are preserved; new uploads use private Supabase Storage. Do not activate both legacy and Supabase backends for new writes.
+- Later: stage 6 authenticated office dashboard, stage 7 email and scheduling. GitHub Actions deployment secrets may be configured separately before future automated backend deployments.
