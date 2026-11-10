@@ -1,6 +1,6 @@
 # Nelio Supabase backend (0.6.0)
 
-This backend replaces Apps Script and Sheets for the existing client page. It does not implement the stage 6 office dashboard or stage 7 scheduler/email delivery.
+This backend replaces Apps Script and Sheets for the existing client page. Stage 6.1 adds an office-only read API and a Google Auth login page. The complete office dashboard and stage 7 scheduler/email delivery are not implemented yet.
 
 ## Architecture
 
@@ -70,3 +70,11 @@ node --test supabase/tests/client_config.test.cjs
 - The backend deployment already existed and did not require a new database migration at cutover. GitHub Pages publication and a physical-device smoke test still need independent verification. Do not declare stage 5 complete before the physical test.
 - Historic Drive files are preserved; new uploads use private Supabase Storage. Do not activate both legacy and Supabase backends for new writes.
 - Later: stage 6 authenticated office dashboard, stage 7 email and scheduling. GitHub Actions deployment secrets may be configured separately before future automated backend deployments.
+
+## Stage 6.1: office access (pending live OAuth setup)
+
+- The new `nelio-office` Edge Function is separate from client upload function `nelio-api`; it checks a bearer token against Supabase Auth for every request and only authorizes the verified Google identity for `shedmi.cpa@gmail.com`.
+- `docs/office/` has a read-only login/overview page, using only a publishable browser key. The service-role key stays on the Edge Function server. `public` tables retain restrictive RLS policies; no SQL migration was required.
+- Configure Google OAuth and the allowed redirect URL as described in `project/stage-6-1.md` before expecting sign-in to work. A signed-in Google user without the office identity still gets a 403.
+- For the first-time deployment, deploy the separate function `nelio-office` after reviewing/merging the PR, then validate negative security tests before checking authorized access. Do not publish credentials or create a new paid service.
+- Tests: `node --experimental-strip-types --test supabase/tests/office_auth.test.mjs` and `node --check docs/office/app.js`.

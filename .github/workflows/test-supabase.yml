@@ -15,8 +15,12 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.5.6
-      - run: deno check supabase/functions/nelio-api/index.ts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: deno check supabase/functions/nelio-api/index.ts supabase/functions/nelio-office/index.ts
+      - run: node --experimental-strip-types --test supabase/tests/office_auth.test.mjs
       - run: deno test supabase/tests/core_test.ts
-      - run: node --check docs/app.js
+      - run: node --check docs/app.js && node --check docs/office/app.js
       - run: node --test supabase/tests/client_config.test.cjs
       - run: python -m py_compile supabase/tools/prepare-import.py supabase/tests/live_api.py
