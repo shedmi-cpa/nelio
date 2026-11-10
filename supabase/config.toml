@@ -13,3 +13,9 @@ major_version = 17
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/nelio-api/index.ts"
+
+[functions.nelio-office]
+enabled = true
+# Verified explicitly against Supabase Auth in nelio-office/core.ts.
+verify_jwt = false
+entrypoint = "./functions/nelio-office/index.ts"
