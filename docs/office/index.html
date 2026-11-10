@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#F6F1E7">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; connect-src https://ryqcyjajdioaxtpbxjzf.supabase.co; base-uri 'none'; form-action 'none'">
+<title>לוח המשרד | שדמי ושות', רואי חשבון</title>
+<link rel="icon" href="../brand/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&amp;family=Frank+Ruhl+Libre:wght@700&amp;display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.89.0" defer></script>
+<script src="config.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="brand"><img src="../brand/logo.svg" width="116" height="55" alt="שדמי ושות', רואי חשבון"><span class="separator"></span><span>ממשק המשרד</span></div><button type="button" id="logout" class="quiet" hidden>התנתקות</button></header>
+<main>
+<section class="headline"><h1>לוח הבקרה</h1><p>ריכוז המסמכים והמעקב אחרי לקוחות המשרד</p></section>
+<div class="notice" id="message" role="status" aria-live="polite">בודקים את מצב ההתחברות…</div>
+<section id="login" class="login" hidden><h2>כניסה למשרד</h2><p>הגישה לנתונים מוגבלת לחשבון Google של משרד שדמי ושות'.</p><button id="login-button" class="primary" type="button">כניסה באמצעות Google</button><p class="fine">ההרשאה נבדקת בשרת בכל בקשה. קישור אישי של לקוח אינו מקנה גישה ללוח המשרד.</p></section>
+<section id="dashboard" hidden>
+<div class="heading-row"><div><h2>תמונת מצב</h2><p class="minor" id="cycle-details"></p></div><label class="cycle">חודש מסמכים<select id="cycle-select" aria-label="בחירת מחזור"></select></label></div>
+<div class="summary" aria-label="סיכום מחזור">
+<article><span>הושלמו</span><strong id="count-complete">—</strong></article>
+<article><span>השלימו חלק</span><strong id="count-partial">—</strong></article>
+<article><span>לא התחילו</span><strong id="count-not-started">—</strong></article>
+<article><span>ממתינים לבדיקה</span><strong id="count-pending">—</strong></article>
+</div>
+<section class="sheet" aria-label="לקוחות המחזור"><div class="table-heading"><h2>לקוחות במחזור</h2><span id="table-count" class="minor"></span></div>
+<div class="table-scroll"><table><thead><tr><th scope="col">בית העסק</th><th scope="col">מנהל החשבונות</th><th scope="col">מצב</th><th scope="col">פעולה אחרונה</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p class="fine">זהו שלב 6.1: קריאה בלבד. סינון מתקדם, פתיחת תיק לקוח ופעולות משרד יתווספו ב־6.2–6.3.</p>
+</section></section>
+</main><footer>Nelio | מערכת הדגמה למשרד בדיוני. אין להשתמש בנתוני לקוחות אמיתיים.</footer>
+</body></html>
