@@ -168,7 +168,7 @@
   if(panel.hidden||viewer.isModalOpen())return;
   if(e.key==='Escape'){e.preventDefault();closeDrawer();return;}
   if(e.key==='Tab'&&isNarrow()) {
-   const nodes=[...panel.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled])')];
+   const nodes=[...panel.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled])')].filter(node=>node.getClientRects().length>0);
    if(!nodes.length)return;
    const first=nodes[0],last=nodes[nodes.length-1];
    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
