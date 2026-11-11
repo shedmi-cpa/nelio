@@ -27,6 +27,8 @@ footer{font-size:.82rem;text-align:center;color:var(--muted);border-top:1px soli
 .drawer-scrim{position:fixed;inset:0;background:rgba(30,42,46,.42);z-index:39}
 @media(min-width:1151px){
  body.drawer-open main{margin-inline-start:530px;margin-inline-end:0;max-width:calc(100% - 530px)}
+ body.drawer-open .filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body.drawer-open .summary{grid-template-columns:repeat(2,minmax(0,1fr))}
  .client-drawer{border-inline-end:2px solid var(--sea)}
 }
 @media(max-width:1150px){
