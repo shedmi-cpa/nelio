@@ -166,11 +166,12 @@ test('signed Supabase URL is fetched privately, rejects a foreign host, and stal
    getCurrentRequest:()=>currentRequest,supabaseUrl:'https://sample.supabase.co'
   });
   delayed.setFiles([{requestId:'R_A',uploadId:'U5',name:'a.png',mime_type:'image/png'}]);
+  const beforeStale=made.length;
   const pending=delayed.select(0);
   delayed.reset();currentRequest='R_B';
   complete({driveBlob:new Blob(['image'],{type:'image/png'})});
   await pending;
-  assert.equal(made.length,1,'late response ignored after leaving client');
+  assert.equal(made.length,beforeStale,'late response ignored after leaving client');
  } finally {
   URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;global.fetch=oldFetch;
  }
