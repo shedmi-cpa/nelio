@@ -27,7 +27,7 @@
  function create({officeCall, getCurrentRequest, supabaseUrl}) {
   const inline = byId('inline-preview'), modal = byId('preview-modal');
   const inlineBody = byId('inline-preview-content'), modalBody = byId('preview-modal-content');
-  const state = {files: [], index: -1, generation: 0, url: null, blob: null, pending: null, sourceButton: null, restoreFocus: null};
+  const state = {files: [], index: -1, generation: 0, url: null, blob: null, pending: null, sourceButton: null, restoreFocus: null, inertBefore: null};
   let origin;
   try { origin = new URL(supabaseUrl).origin; } catch { origin = ''; }
   const active = () => state.files[state.index];
@@ -143,18 +143,26 @@
   function openEnlarged() {
    if (!state.url || modal.hidden === false) return;
    state.restoreFocus = document.activeElement;
-   modal.hidden = false; modalBody.replaceChildren(contentNode(active(), state.url));
+   const background = [document.querySelector('main'), document.querySelector('header.top'),
+    document.querySelector('footer'), byId('client-detail')];
+   state.inertBefore = background.map(node => [node, node.inert]);
+   modal.hidden = false;
+   for (const [node] of state.inertBefore) node.inert = true;
+   modalBody.replaceChildren(contentNode(active(), state.url));
    byId('preview-close').focus();
   }
   function closeEnlarged(restore = true) {
    if (modal.hidden) return;
    modal.hidden = true; modalBody.replaceChildren();
+   for (const [node, wasInert] of state.inertBefore || []) node.inert = wasInert;
+   state.inertBefore = null;
    if (restore && state.restoreFocus?.isConnected) state.restoreFocus.focus();
    state.restoreFocus = null;
   }
   async function download() {
    const file = active(); if (!file) return;
-   const btn = byId('preview-download'); btn.disabled = true;
+   const buttons = [byId('preview-download'), byId('inline-download')];
+   for (const btn of buttons) btn.disabled = true;
    let temporary = null;
    const ticket = state.generation;
    try {
@@ -170,7 +178,7 @@
     document.body.append(link); link.click(); link.remove();
    } catch (e) { if (alive(ticket, file.requestId)) showText(userError(e.code), true); }
    finally {
-    btn.disabled = false;
+    for (const btn of buttons) btn.disabled = false;
     if (temporary) setTimeout(() => URL.revokeObjectURL(temporary), 10000);
    }
   }
@@ -192,7 +200,7 @@
   }
   byId('preview-expand').addEventListener('click', openEnlarged);
   byId('preview-close').addEventListener('click', () => closeEnlarged());
-  byId('preview-download').addEventListener('click', () => void download());
+  for (const id of ['preview-download', 'inline-download']) byId(id).addEventListener('click', () => void download());
   modal.addEventListener('click', e => { if (e.target === modal) closeEnlarged(); });
   document.addEventListener('keydown', e => {
    if (modal.hidden) return;
