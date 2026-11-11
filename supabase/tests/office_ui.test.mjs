@@ -124,6 +124,23 @@ test('signed Supabase URL is fetched privately, rejects a foreign host, and stal
   assert.equal(made.length,1);
   viewer.reset();
 
+  // An expired signed link can be reissued once by the already-authorized server action.
+  let signing=0, downloads=0;
+  global.fetch=async()=>{
+   downloads++;
+   return downloads===1 ? new Response('',{status:403}) :
+    new Response(new Blob(['pdf'],{type:'application/pdf'}),{status:200});
+  };
+  const renewed=global.window.NelioDocumentPreview.create({
+   officeCall:async()=>({ok:true,url:'https://sample.supabase.co/storage/v1/object/sign/nelio-documents/R_A/file.pdf?token='+ (++signing)}),
+   getCurrentRequest:()=>currentRequest,supabaseUrl:'https://sample.supabase.co'
+  });
+  renewed.setFiles([{requestId:'R_A',uploadId:'U3',name:'report.pdf',mime_type:'application/pdf'}]);
+  await renewed.select(0);
+  assert.equal(signing,2,'one fresh signature after expiration');
+  assert.equal(downloads,2);
+  renewed.reset();
+
   const rejected=global.window.NelioDocumentPreview.create({
    officeCall:async()=>({ok:true,url:'https://example.evil/storage/v1/object/sign/nelio-documents/a.pdf'}),
    getCurrentRequest:()=>currentRequest,supabaseUrl:'https://sample.supabase.co'
@@ -133,6 +150,15 @@ test('signed Supabase URL is fetched privately, rejects a foreign host, and stal
   assert.equal(remote.length,1,'untrusted host not fetched');
   assert.match(el('inline-preview-content').children[0].textContent,/כתובת קובץ לא תקינה/);
   rejected.reset();
+
+  const forbidden=global.window.NelioDocumentPreview.create({
+   officeCall:async()=>{throw Object.assign(Error('FORBIDDEN'),{code:'FORBIDDEN'});},
+   getCurrentRequest:()=>currentRequest,supabaseUrl:'https://sample.supabase.co'
+  });
+  forbidden.setFiles([{requestId:'R_A',uploadId:'U4',name:'a.pdf',mime_type:'application/pdf'}]);
+  await forbidden.select(0);
+  assert.match(el('inline-preview-content').children[0].textContent,/אין הרשאה/);
+  forbidden.reset();
 
   let complete;
   const delayed=global.window.NelioDocumentPreview.create({
