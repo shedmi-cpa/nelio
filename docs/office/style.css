@@ -102,3 +102,23 @@ footer{font-size:.82rem;text-align:center;color:var(--muted);border-top:1px soli
 .tab-count{color:var(--missing);font-weight:700}
 #call-rows .missing-cell{color:var(--missing)}#call-rows td{vertical-align:top}#call-rows td:first-child{font-weight:700}
 .action-pane{align-content:start}.action-foot button,.action-foot a{align-self:start}
+/* Stage 6.3.3: log and settings. */
+.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:14px}
+.settings-grid fieldset{border:1px solid var(--line);background:var(--sheet);padding:14px 16px;display:grid;gap:10px;margin:0;min-width:0}
+.settings-grid legend{font-family:'Frank Ruhl Libre',Georgia,serif;color:var(--sea);font-weight:700;padding-inline:6px}
+.settings-grid label{display:grid;grid-template-columns:1fr 130px;align-items:center;gap:10px;font-size:.95rem}
+.settings-grid input,.settings-grid textarea,.settings-grid select{font:inherit;color:var(--ink);border:1px solid var(--line);background:var(--sheet);padding:8px 10px;width:100%;min-width:0}
+.settings-grid .wide{grid-column:1/-1}.settings-grid .wide label{grid-template-columns:1fr}
+.settings-grid textarea{resize:vertical;line-height:1.6}
+.settings-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;grid-column:1/-1}
+.settings-actions p{margin:0}.settings-actions p.error,#settings-message.error,#template-message.error{color:var(--rejected)}
+.holiday-list{margin:0;padding-inline-start:20px;columns:2;font-size:.94rem}
+#log-rows td{vertical-align:top;font-variant-numeric:tabular-nums}#log-rows td:first-child{font-weight:400;white-space:nowrap}
+.settings-grid input:focus-visible,.settings-grid textarea:focus-visible,.settings-grid select:focus-visible{outline:3px solid #6697b2;outline-offset:2px}
+@media(max-width:760px){.settings-grid{grid-template-columns:1fr}.settings-grid label{grid-template-columns:1fr}.holiday-list{columns:1}}
+@media(max-width:580px){
+ #panel-log thead,#panel-calls thead{display:none}
+ #log-rows tr,#call-rows tr{display:block;border-bottom:1px solid var(--line);padding:9px 0}
+ #log-rows td,#call-rows td{display:block;border:0;padding:2px 0}
+ #log-rows td:first-child,#log-rows td:nth-child(2){display:inline;color:var(--muted);font-size:.9rem;margin-inline-end:8px}
+}

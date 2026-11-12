@@ -345,3 +345,34 @@ test('call list shows one bookkeeper, uncalled clients first, Israeli formats', 
  assert.equal(callList.dateOf('2026-11-12'),'12/11/2026');
  assert.match(htmlSource,/role="tablist"/);assert.match(htmlSource,/id="call-rows"/);assert.match(htmlSource,/call-list\.js/);
 });
+
+// ---- Stage 6.3.3 ----
+await import('../../docs/office/log-settings.js');
+const logSettings=global.window.NelioLogSettings;
+test('log entries read as Hebrew sentences for old and new event names', () => {
+ const names=id=>({S2:'מירב סלעי'})[id]||'';
+ assert.equal(logSettings.who('staff:S2',names),'מירב סלעי');
+ assert.equal(logSettings.who('office:S2',names),'מירב סלעי');
+ assert.equal(logSettings.who('client:C07',names),'הלקוח');
+ assert.equal(logSettings.who('system',names),'מערכת');
+ assert.equal(logSettings.describe({event:'reject',details:'דף בנק: מטושטש'}),'סימן "לא קריא": דף בנק: מטושטש');
+ assert.equal(logSettings.describe({event:'office_approve'}),'אישר: בדקתי, תקין');
+ assert.equal(logSettings.describe({kind:'message',details:'אישור',status:'simulated'}),'הודעה "אישור" נרשמה (הדגמה, לא נשלחה)');
+ assert.match(logSettings.describe({event:'office_settings',details:'due_day: 12 → 14'}),/תאריך היעד \(יום בחודש\): 12 → 14/);
+ assert.equal(logSettings.describe({event:'cycle_open',details:'נפתח מחזור'}),'נפתח מחזור');
+ assert.equal(logSettings.describe({event:'something_new'}),'something_new');
+});
+test('log filters by type and by client', () => {
+ const rows=[{actor:'client:C07',businessName:'מאפיית השקד',clientId:'C07'},{actor:'office:S2',businessName:'קפה הגפן',clientId:'C10'},{kind:'message',businessName:'מאפיית השקד'},{actor:'system'}];
+ assert.equal(logSettings.filterRows(rows,{type:'office'}).length,1);
+ assert.equal(logSettings.filterRows(rows,{type:'message'}).length,1);
+ assert.equal(logSettings.filterRows(rows,{type:'system'}).length,1);
+ assert.equal(logSettings.filterRows(rows,{query:'שקד'}).length,2);
+ assert.equal(logSettings.filterRows(rows,{query:'c10'}).length,1);
+});
+test('settings errors name the field in Hebrew', () => {
+ assert.match(logSettings.errorText({code:'BAD_VALUE',key:'due_day'}),/תאריך היעד/);
+ assert.match(logSettings.errorText({code:'LINK_REQUIRED'}),/\[קישור\]/);
+ assert.match(logSettings.errorText({code:'???'}),/לא הצליחה/);
+ assert.match(htmlSource,/id="panel-log"/);assert.match(htmlSource,/id="panel-settings"/);assert.match(htmlSource,/log-settings\.js/);
+});

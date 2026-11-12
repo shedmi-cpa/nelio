@@ -26,5 +26,5 @@ grant usage on schema public to service_role, anon, authenticated;
 SQL
 for f in "$repo"/supabase/migrations/*.sql; do echo "migration: $(basename "$f")"; psql_run -f "$f"; done
 psql_run -f "$repo/supabase/tests/fixture.sql"
-for f in database.sql office_actions.sql office_more.sql; do echo "test: $f"; psql_run -f "$repo/supabase/tests/$f"; done
+for f in database.sql office_actions.sql office_more.sql office_log_settings.sql; do echo "test: $f"; psql_run -f "$repo/supabase/tests/$f"; done
 echo 'SQL tests passed'

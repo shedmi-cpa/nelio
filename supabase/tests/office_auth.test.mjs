@@ -273,3 +273,39 @@ test('reminder now and call list reach their own routines; foreign users reach n
  for(const b of [{action:'callList'},startBody,{action:'remindNow',requestId:'R',actor:'S2'}])assert.equal((await foreign(request(b))).status,403);
  assert.equal(calls.some(c=>c.url.includes('/rpc/')||c.url.includes('/storage/')),false);
 });
+
+// ---- Stage 6.3.3: log and settings ----
+import {cleanMultiline} from '../functions/nelio-office/core.ts';
+test('log and settings actions accept only listed keys and clean message bodies', () => {
+ assert.deepEqual(parseAction({action:'logList',cycleId:'2026-10'}),{action:'logList',cycleId:'2026-10'});
+ assert.deepEqual(parseAction({action:'settingsGet'}),{action:'settingsGet'});
+ assert.deepEqual(parseAction({action:'settingsSave',actor:'S2',values:{due_day:'14'}}),{action:'settingsSave',actor:'S2',values:{due_day:'14'}});
+ for(const bad of [{action:'settingsSave',actor:'S2',values:{demo_mode:'FALSE'}},{action:'settingsSave',actor:'S2',values:{}},
+  {action:'settingsSave',actor:'S2',values:{due_day:14}},{action:'settingsSave',values:{due_day:'14'}},{action:'settingsGet',extra:1},
+  {action:'templateSave',actor:'S2',templateId:'x; drop',subject:'',body:'a'},{action:'templateSave',actor:'S2',templateId:'REMINDER_1',subject:'',body:'   '},
+  {action:'logList',cycleId:'all'}])assert.equal(parseAction(bad),null);
+ assert.equal(cleanMultiline('שלום\u202e  [שם איש הקשר],\r\n\r\n\r\n\r\nחסר: [מה שחסר]  ',1500),'שלום [שם איש הקשר],\n\nחסר: [מה שחסר]');
+});
+test('settings and log reach their routines; refusals keep only a known setting key', async () => {
+ const seen=[];
+ const f=async(url,init)=>{const s=String(url);
+  if(s.includes('/auth/v1/user'))return Response.json(user);
+  if(s.includes('/rpc/')){const p=JSON.parse(init.body).p;seen.push(s.split('/rpc/')[1]+':'+(p.action||'log'));
+   if(p.action==='save')return Response.json({ok:false,code:'BAD_VALUE',key:'due_day'});
+   if(p.action==='saveTemplate')return Response.json({ok:false,code:'BAD_VALUE',key:'<b>'});
+   return Response.json({ok:true,rows:[]});}
+  throw Error('unexpected '+s);};
+ const h=createOfficeHandler(env,f);
+ assert.equal((await h(request({action:'logList'}))).status,200);
+ assert.equal((await h(request({action:'settingsGet'}))).status,200);
+ const r=await h(request({action:'settingsSave',actor:'S2',values:{due_day:'99'}}));
+ assert.equal(r.status,400);assert.deepEqual(await r.json(),{ok:false,code:'BAD_VALUE',key:'due_day'});
+ const t=await h(request({action:'templateSave',actor:'S2',templateId:'REMINDER_1',subject:'',body:'x [קישור]'}));
+ assert.deepEqual(await t.json(),{ok:false,code:'BAD_VALUE'});
+ assert.deepEqual(seen,['nelio_office_log:log','nelio_office_settings:get','nelio_office_settings:save','nelio_office_settings:saveTemplate']);
+});
+test('a foreign account cannot read the log or change settings', async () => {
+ const calls=[],h=createOfficeHandler(env,writeStub({authUser:{...user,email:'x@gmail.com'},calls}));
+ for(const b of [{action:'logList'},{action:'settingsGet'},{action:'settingsSave',actor:'S2',values:{due_day:'10'}}])assert.equal((await h(request(b))).status,403);
+ assert.equal(calls.some(c=>c.url.includes('/rpc/')),false);
+});
