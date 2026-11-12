@@ -2,7 +2,7 @@
 // Reads since 6.1; write actions since 6.3.1, all through the nelio_office_action database routine.
 export const OFFICE_ORIGIN = 'https://shedmi-cpa.github.io';
 export const OFFICE_EMAIL = 'shedmi.cpa@gmail.com';
-export const VERSION = '0.7.2';
+export const VERSION = '0.7.3';
 export type OfficeEnv = { url:string; anonKey:string; serviceKey:string; driveCredentials?:string; linkKey?:string };
 type HttpFetch = (input:RequestInfo|URL, init?:RequestInit)=>Promise<Response>;
 export type WriteAction =
@@ -17,7 +17,8 @@ export type WriteAction =
  {action:'uploadFinish';requestId:string;actor:string;itemId:string;uploadId:string};
 export type SettingsAction={action:'logList';cycleId?:string}|{action:'settingsGet'}|
  {action:'settingsSave';actor:string;values:Record<string,string>}|
- {action:'templateSave';actor:string;templateId:string;subject:string;body:string};
+ {action:'templateSave';actor:string;templateId:string;subject:string;body:string}|
+ {action:'zipFiles';actor:string;scope:'request'|'docType'|'client'|'cycle';requestId?:string;docTypeId?:string;clientId?:string;cycleId?:string;includeRejected:boolean;dryRun:boolean};
 const SETTING_KEYS=['due_day','reminder1_days_before','reminder2_days_before','last_day_days_before','summary_days_after','send_time','quiet_start','quiet_end','friday_cutoff'];
 type Action = {action:'session'}|{action:'overview';cycleId?:string}|{action:'callList';cycleId?:string}|SettingsAction|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string}|WriteAction;
 const WRITE_KEYS:Record<WriteAction['action'],string[]>={
@@ -111,6 +112,18 @@ function parseSettings(x:Record<string,unknown>):SettingsAction|null{
   const entries=Object.entries(v as Record<string,unknown>);
   if(!entries.length||!entries.every(([k,val])=>SETTING_KEYS.includes(k)&&typeof val==='string'&&val.length<=5))return null;
   return {action:'settingsSave',actor:x.actor,values:Object.fromEntries(entries) as Record<string,string>};
+ }
+ if(x.action==='zipFiles'&&only('action','actor','scope','requestId','docTypeId','clientId','cycleId','includeRejected','dryRun')){
+  if(typeof x.includeRejected!=='boolean'||typeof x.dryRun!=='boolean')return null;
+  const base={action:'zipFiles' as const,actor:x.actor,includeRejected:x.includeRejected,dryRun:x.dryRun};
+  // Each scope takes exactly the identifiers it needs, and nothing else.
+  if(x.scope==='request'&&only('action','actor','scope','requestId','includeRejected','dryRun')&&validId(x.requestId))return {...base,scope:'request',requestId:x.requestId};
+  if(x.scope==='docType'&&only('action','actor','scope','requestId','docTypeId','includeRejected','dryRun')&&validId(x.requestId)&&typeof x.docTypeId==='string'&&/^[A-Z0-9_]{2,40}$/.test(x.docTypeId))
+   return {...base,scope:'docType',requestId:x.requestId,docTypeId:x.docTypeId};
+  if(x.scope==='client'&&only('action','actor','scope','clientId','includeRejected','dryRun')&&validId(x.clientId))return {...base,scope:'client',clientId:x.clientId};
+  if(x.scope==='cycle'&&only('action','actor','scope','cycleId','includeRejected','dryRun')&&typeof x.cycleId==='string'&&/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(x.cycleId))
+   return {...base,scope:'cycle',cycleId:x.cycleId};
+  return null;
  }
  if(x.action==='templateSave'&&only('action','actor','templateId','subject','body')){
   if(typeof x.templateId!=='string'||!/^[A-Z0-9_]{2,40}$/.test(x.templateId))return null;
@@ -271,6 +284,15 @@ export function createOfficeHandler(env:OfficeEnv,f:HttpFetch=fetch){
    if(!isAuthorizedOfficeUser(user))return output({ok:false,code:'FORBIDDEN'},403,origin);
    if(action.action==='session')return output({ok:true,office:true,email:OFFICE_EMAIL,version:VERSION},200,origin);
    if(isWrite(action))return await officeWrite(action,env,f,origin);
+   if(action.action==='zipFiles'){
+    const {action:_name,...p}=action;
+    const result=await rpc('nelio_office_files',p,env,f);
+    if(result.ok!==true){
+     const code=typeof result.code==='string'&&Object.hasOwn(FAILURE_STATUS,result.code)?result.code:'UNAVAILABLE';
+     return output({ok:false,code},FAILURE_STATUS[code]??503,origin);
+    }
+    return output(result,200,origin);
+   }
    if(action.action==='logList'||action.action==='settingsGet'||action.action==='settingsSave'||action.action==='templateSave'){
     const routine=action.action==='logList'?'nelio_office_log':'nelio_office_settings';
     const p:Record<string,unknown>=action.action==='logList'?(action.cycleId?{cycleId:action.cycleId}:{}):

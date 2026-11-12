@@ -122,3 +122,12 @@ footer{font-size:.82rem;text-align:center;color:var(--muted);border-top:1px soli
  #log-rows td,#call-rows td{display:block;border:0;padding:2px 0}
  #log-rows td:first-child,#log-rows td:nth-child(2){display:inline;color:var(--muted);font-size:.9rem;margin-inline-end:8px}
 }
+/* Stage 6.3.4: ZIP dialog. */
+.heading-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.action-body .choices{border:0;padding:0;margin:0;display:grid;gap:8px}
+.action-body .choices label{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:var(--ink);font-size:.97rem}
+.action-body .choices select{width:auto;min-width:140px}
+.action-body .check-line{display:flex;align-items:center;gap:8px;color:var(--ink)}
+.action-body .choices input,.action-body .check-line input{width:auto}
+.zip-tree{font-size:.86rem;line-height:1.6;background:var(--paper);border:1px solid var(--line);padding:9px 11px;white-space:pre-line;overflow-wrap:anywhere;max-height:200px;overflow-y:auto}
+.zip-tree:empty{display:none}

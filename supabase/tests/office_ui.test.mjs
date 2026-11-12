@@ -376,3 +376,50 @@ test('settings errors name the field in Hebrew', () => {
  assert.match(logSettings.errorText({code:'???'}),/לא הצליחה/);
  assert.match(htmlSource,/id="panel-log"/);assert.match(htmlSource,/id="panel-settings"/);assert.match(htmlSource,/log-settings\.js/);
 });
+
+// ---- Stage 6.3.4: ZIP ----
+await import('../../docs/office/zip-export.js');
+const Z=global.window.NelioZip;
+const {execFileSync}=await import('node:child_process');
+const os=await import('node:os');const path=await import('node:path');
+test('CRC-32 matches the standard value', () => {
+ assert.equal(Z.crc32(new TextEncoder().encode('123456789')),0xCBF43926);
+});
+test('folder names follow D31 and two files never share a path', () => {
+ const f={businessName:'ג\'ו שיפוצים "בע״מ"/צפון',clientId:'C12',period:'2026-09_10',storedName:'ג-ו_2026-09_10_דף-בנק_01.pdf'};
+ assert.equal(Z.zipPath(f),'שדמי – מסמכי לקוחות/ג\'ו שיפוצים ״בע״מ״-צפון (C12)/2026-09_10/ג-ו_2026-09_10_דף-בנק_01.pdf');
+ assert.equal(Z.zipPath({...f,rejected:true}).split('/').slice(-2)[0],'נדחו');
+ assert.deepEqual(Z.uniquePaths([f,f,f]).map(p=>p.split('/').pop()),['ג-ו_2026-09_10_דף-בנק_01.pdf','ג-ו_2026-09_10_דף-בנק_01-2.pdf','ג-ו_2026-09_10_דף-בנק_01-3.pdf']);
+ assert.equal(Z.safeSegment(' .שם\u202e:*? '),'שם---');
+ assert.equal(Z.archiveName('מאפיית השקד_2026-10'),'שדמי-מסמכי-לקוחות_מאפיית-השקד_2026-10.zip');
+});
+test('export builds a valid ZIP with Hebrew names, keeps order, and lists a failed file', async () => {
+ const files=[
+  {requestId:'R',uploadId:'U1',clientId:'C07',businessName:'מאפיית השקד',period:'2026-10',storedName:'מאפיית-השקד_2026-10_דף-בנק_01.jpg'},
+  {requestId:'R',uploadId:'U2',clientId:'C07',businessName:'מאפיית השקד',period:'2026-10',storedName:'מאפיית-השקד_2026-10_דף-בנק_02.pdf',rejected:true},
+  {requestId:'R',uploadId:'U3',clientId:'C07',businessName:'מאפיית השקד',period:'2026-10',storedName:'missing.pdf'},
+ ];
+ const calls=[];
+ const officeCall=async(action,p)=>{calls.push(p.uploadId);
+  if(p.uploadId==='U1')return {ok:true,driveBlob:new Blob([new TextEncoder().encode('drive bytes')])};
+  if(p.uploadId==='U2')return {ok:true,url:'https://proj.supabase.co/storage/v1/object/sign/nelio-documents/x?token=1'};
+  throw Object.assign(Error('NOT_FOUND'),{code:'NOT_FOUND'});};
+ const fetchImpl=async url=>{assert.ok(url.startsWith('https://proj.supabase.co/storage/v1/object/sign/'));return new Response('%PDF-1.4 bytes');};
+ const sink=Z.memorySink();
+ const r=await Z.exportFiles({files,officeCall,supabaseUrl:'https://proj.supabase.co',sink,fetchImpl,now:new Date(2026,10,12,10,5)});
+ assert.equal(r.added,2);assert.equal(r.failed.length,1);
+ assert.equal(calls.filter(x=>x==='U3').length,2,'a failed file is retried once');
+ const file=path.join(os.tmpdir(),'nelio-zip-test-'+process.pid+'.zip');
+ fs.writeFileSync(file,Buffer.from(await sink.blob().arrayBuffer()));
+ const out=execFileSync('python3',['-c','import sys,zipfile\nz=zipfile.ZipFile(sys.argv[1])\nassert z.testzip() is None\nfor i in z.infolist(): print(i.filename+"|"+str(i.file_size)+"|"+z.read(i).decode("utf-8","replace")[:12])',file],{encoding:'utf8'});
+ fs.unlinkSync(file);
+ const lines=out.trim().split('\n');
+ assert.equal(lines[0],'שדמי – מסמכי לקוחות/מאפיית השקד (C07)/2026-10/מאפיית-השקד_2026-10_דף-בנק_01.jpg|11|drive bytes');
+ assert.equal(lines[1],'שדמי – מסמכי לקוחות/מאפיית השקד (C07)/2026-10/נדחו/מאפיית-השקד_2026-10_דף-בנק_02.pdf|14|%PDF-1.4 byt');
+ assert.match(lines[2],/^שדמי – מסמכי לקוחות\/קבצים-שלא-הורדו\.txt\|/);
+});
+test('a signed URL for another host or path is refused', () => {
+ assert.throws(()=>Z.validatedUrl('https://evil.test/storage/v1/object/sign/nelio-documents/x','https://proj.supabase.co'));
+ assert.throws(()=>Z.validatedUrl('https://proj.supabase.co/storage/v1/object/public/nelio-documents/x','https://proj.supabase.co'));
+ assert.ok(Z.validatedUrl('https://proj.supabase.co/storage/v1/object/sign/nelio-documents/x?token=1','https://proj.supabase.co'));
+});

@@ -6,7 +6,7 @@
  if(!c||!lib?.createClient){msg.textContent='רכיב ההתחברות לא נטען. בדקו את החיבור לאינטרנט ורעננו.';msg.classList.add('error');return;}
  const auth=lib.createClient(c.supabaseUrl,c.publishableKey,{auth:{flowType:'pkce',autoRefreshToken:true,detectSessionInUrl:true,persistSession:true}});
  let activeId=null,overview=null,currentRequest=null,sequence=0,returnFocus=null;
- if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary||!window.NelioOfficeActions?.create||!window.NelioCallList?.create||!window.NelioLogSettings?.create) {
+ if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary||!window.NelioOfficeActions?.create||!window.NelioCallList?.create||!window.NelioLogSettings?.create||!window.NelioZip) {
   msg.textContent='רכיב תצוגת המסמכים לא נטען. רעננו את הדף.';
   msg.classList.add('error');return;
  }
@@ -21,7 +21,7 @@
  function staffName(id){return (overview?.staff||[]).find(x=>x.staff_id===id)?.name||'';}
  function detailNote(text,error=false){const n=el('detail-message');n.textContent=text;n.classList.toggle('error',error);}
  const actions=window.NelioOfficeActions.create({
-  officeCall,staffName,publishableKey:c.publishableKey,
+  officeCall,staffName,publishableKey:c.publishableKey,supabaseUrl:c.supabaseUrl,
   getActor:()=>actorSelect.value,
   staffList:()=>overview?.staff||[],
   setActor:id=>{actorSelect.value=id;actorSelect.dispatchEvent(new Event('change'));detailNote('');},
@@ -233,6 +233,7 @@
  cycle.addEventListener('change',()=>{closeDrawer(false);refresh(cycle.value);});
  for(const id of ['client-search','filter-staff','filter-status','filter-frequency'])el(id).addEventListener(id==='client-search'?'input':'change',renderRows);
  el('close-detail').addEventListener('click',()=>closeDrawer());
+ el('cycle-zip').addEventListener('click',e=>{if(overview?.cycleId)actions.cycleZip(overview.cycleId,e.currentTarget);});
  scrim.addEventListener('click',()=>closeDrawer());
  window.addEventListener('resize',()=>{viewer.syncLayout();syncDrawerMode();});
  document.addEventListener('keydown',e=>{

@@ -48,7 +48,7 @@
   LINK_KEY_MISSING:'מפתח הקישורים עוד לא הוגדר בשרת, ולכן הקישור לא הוחלף.',
   BAD_TYPE:'סוג הקובץ לא נתמך.',TOO_BIG:'הקובץ גדול מדי.',QUOTA_EXCEEDED:'בבקשה הזו כבר יש מספר הקבצים המרבי.',
   UPLOAD_CONFLICT:'ההעלאה התנגשה בהעלאה קודמת. נסו שוב.',UPLOAD_PENDING:'הקובץ עוד לא נשמר. נסו שוב בעוד רגע.',
-  STORAGE:'שמירת הקובץ נכשלה. בדקו את החיבור ונסו שוב.',
+  STORAGE:'שמירת הקובץ נכשלה. בדקו את החיבור ונסו שוב.',TOO_LARGE:'הקובץ גדול מדי ל־ZIP אחד. בחרו טווח קטן יותר.',
   LINK_KEY_INVALID:'מפתח הקישורים בשרת לא תקין, ולכן הקישור לא הוחלף.',
   NOT_FOUND:'הלקוח או הקובץ לא נמצאו. רעננו את התיק.',
   UNAUTHORIZED:'ההתחברות פגה. התחברו מחדש.',FORBIDDEN:'אין הרשאה לפעולה הזו.'
@@ -81,10 +81,10 @@
  function newUploadKey(){return 'office-'+Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>b.toString(16).padStart(2,'0')).join('');}
  function errorText(code){return ERRORS[code]||'הפעולה לא הצליחה. בדקו את החיבור ונסו שוב.';}
 
- function create({officeCall,getActor,setActor,staffList,onActorMissing,onChanged,staffName,announce,publishableKey,fetchImpl=(...a)=>fetch(...a)}) {
+ function create({officeCall,getActor,setActor,staffList,onActorMissing,onChanged,staffName,announce,publishableKey,supabaseUrl,fetchImpl=(...a)=>fetch(...a)}) {
   const doc=document,el=id=>doc.getElementById(id);
   const dialog=el('action-dialog'),title=el('action-title'),body=el('action-body'),foot=el('action-foot'),note=el('action-message');
-  let detail=null,returnFocus=null,busy=false,ticket=0;
+  let detail=null,returnFocus=null,busy=false,ticket=0,abortCurrent=null;
 
   function node(tag,attrs={},text) {
    const n=doc.createElement(tag);
@@ -116,6 +116,7 @@
   }
   function close() {
    if(dialog.hidden)return;
+   if(abortCurrent){abortCurrent();abortCurrent=null;}
    ++ticket;dialog.hidden=true;body.replaceChildren();foot.replaceChildren();
    if(returnFocus?.isConnected)returnFocus.focus();
    returnFocus=null;
@@ -312,6 +313,90 @@
    }
   }
 
+
+  // Stage 6.3.4 (D49): one ZIP for a choice of files. scopes: [{id,label,params}], docTypes for the "one type" choice.
+  function zipDialog({title,scopes,docTypes=[]},trigger) {
+   if(!actorOrStop())return;
+   const Z=window.NelioZip;
+   const mine=open(title||'הורדת ZIP',trigger);
+   let manifest=null,controller=null,check=0;
+   const choices=node('fieldset',{className:'choices'});choices.append(node('legend',{className:'minor'},'מה להוריד'));
+   scopes.forEach((s,i)=>{
+    const label=node('label',{});const radio=node('input',{type:'radio',name:'zip-scope',value:String(i)});if(i===0)radio.checked=true;
+    label.append(radio,' '+s.label);
+    if(s.withType&&docTypes.length){const sel=node('select',{id:'zip-doc-type','aria-label':'סוג מסמך'});for(const t of docTypes)sel.append(new Option(t.name,t.id));label.append(' ',sel);sel.addEventListener('change',()=>{radio.checked=true;void refresh();});}
+    radio.addEventListener('change',()=>void refresh());
+    choices.append(label);
+   });
+   const rejectedLabel=node('label',{className:'check-line'});const rejected=node('input',{type:'checkbox',id:'zip-rejected'});rejected.checked=true;
+   rejectedLabel.append(rejected,' לכלול קבצים שנדחו (בתיקייה "נדחו")');rejected.addEventListener('change',()=>void refresh());
+   const summary=node('p',{className:'minor','aria-live':'polite'});
+   const tree=node('div',{className:'zip-tree',dir:'rtl'});
+   const bigLabel=node('label',{className:'check-line'});const big=node('input',{type:'checkbox',id:'zip-big'});
+   bigLabel.append(big,' ההורדה גדולה. להמשיך בכל זאת');bigLabel.hidden=true;
+   body.append(choices,rejectedLabel,summary,tree,bigLabel);
+   const go=button('הורדה','primary',()=>void start());
+   const cancel=button('ביטול','quiet',()=>{if(controller){controller.abort();}else close();});
+   foot.append(go,cancel);
+   function chosen() {
+    const i=Number((dialog.querySelector('input[name=zip-scope]:checked')||{}).value||0),s=scopes[i];
+    const params={...s.params};if(s.withType)params.docTypeId=(dialog.querySelector('#zip-doc-type')||{}).value;
+    return {scope:s,params};
+   }
+   async function refresh() {
+    const ticketNow=++check;manifest=null;go.disabled=true;summary.textContent='בודקים אילו קבצים ייכללו…';tree.replaceChildren();bigLabel.hidden=true;
+    const {params}=chosen();
+    try {
+     const r=await officeCall('zipFiles',{...params,actor:getActor(),includeRejected:rejected.checked,dryRun:true});
+     if(ticketNow!==check||mine!==ticket)return;
+     manifest=r;
+     if(!r.count){summary.textContent='אין קבצים בבחירה הזו.';return;}
+     if(r.overLimit){summary.textContent='יותר מ־'+Z.MAX_FILES+' קבצים. בחרו טווח קטן יותר, למשל לקוח אחד.';return;}
+     if(r.totalBytes>Z.MAX_BYTES){summary.textContent='הבחירה גדולה מ־2,000 מגה־בייט. בחרו טווח קטן יותר.';return;}
+     summary.textContent=r.count+' קבצים, כ־'+Z.sizeText(r.totalBytes)+'. הקבצים נאספים בדפדפן ונשמרים כקובץ אחד.';
+     const paths=Z.uniquePaths(r.files);
+     // Shown from the business folder down, so each line fits; the archive itself starts at "'+Z.ROOT+'".
+     tree.textContent='בתוך התיקייה "'+Z.ROOT+'":\n'+paths.slice(0,6).map(p=>p.slice(Z.ROOT.length+1).split('/').join(' / ')).join('\n')+(paths.length>6?'\n… ועוד '+(paths.length-6):'');
+     bigLabel.hidden=r.totalBytes<=Z.WARN_BYTES;big.checked=false;
+     go.disabled=false;
+    } catch(e){if(ticketNow===check&&mine===ticket){summary.textContent='';say(errorText(e.code),true);}}
+   }
+   async function start() {
+    if(!manifest||!manifest.count)return;
+    if(!bigLabel.hidden&&!big.checked){say('סמנו שההורדה גדולה כדי להמשיך.',true);big.focus();return;}
+    const actor=actorOrStop();if(!actor)return;
+    const {scope,params}=chosen(),name=Z.archiveName(scope.fileLabel||scope.label);
+    // Chrome can write straight to disk; the picker must open while the click is still fresh.
+    let fileSink=null,blobSink=null;
+    if(typeof window.showSaveFilePicker==='function') {
+     try{const handle=await window.showSaveFilePicker({suggestedName:name,types:[{description:'ZIP',accept:{'application/zip':['.zip']}}]});fileSink=await handle.createWritable();}
+     catch(e){if(e?.name==='AbortError')return;fileSink=null;}
+    }
+    if(!fileSink)blobSink=Z.memorySink();
+    controller=new AbortController();abortCurrent=()=>controller?.abort();go.disabled=true;for(const n of body.querySelectorAll('input,select'))n.disabled=true;cancel.textContent='עצירה';
+    try {
+     const r=await officeCall('zipFiles',{...params,actor,includeRejected:rejected.checked,dryRun:false});
+     say('מורידים 0 מתוך '+r.files.length+'…');
+     const result=await Z.exportFiles({files:r.files,officeCall,supabaseUrl,signal:controller.signal,sink:fileSink||blobSink,
+      onProgress:(n,total)=>{if(mine===ticket)say('מורידים '+n+' מתוך '+total+'…');}});
+     if(fileSink)await fileSink.close();
+     else {
+      const url=URL.createObjectURL(blobSink.blob());const a=doc.createElement('a');a.href=url;a.download=name;a.hidden=true;doc.body.append(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+     }
+     if(mine!==ticket)return;
+     say(result.failed.length?'הורדו '+result.added+' קבצים. '+result.failed.length+' לא הורדו, והרשימה שלהם בקובץ "קבצים-שלא-הורדו.txt" בתוך ה־ZIP.':
+      'הורדו '+result.added+' קבצים לקובץ '+name+'. ההורדה נרשמה ביומן.',Boolean(result.failed.length));
+    } catch(e) {
+     if(fileSink){try{await fileSink.abort();}catch{/* nothing was kept */}}
+     if(mine===ticket)say(controller?.signal.aborted?'ההורדה נעצרה. לא נשמר קובץ.':errorText(e.code),!controller?.signal.aborted);
+    } finally {
+     controller=null;abortCurrent=null;cancel.textContent='סגירה';go.disabled=false;for(const n of body.querySelectorAll('input,select'))n.disabled=false;
+    }
+   }
+   focusFirst();void refresh();
+  }
+
   async function approve(trigger) {
    const actor=actorOrStop();if(!actor||busy)return;
    busy=true;trigger.disabled=true;
@@ -356,11 +441,25 @@
    if(can.whatsapp)reminders.append(button('תזכורת בוואטסאפ','quiet',e=>void whatsappDialog(e.currentTarget)),
     button('שליחת תזכורת עכשיו','quiet',e=>void remindDialog(e.currentTarget)));
    reminders.append(button('העלאה בשם הלקוח','quiet',e=>uploadDialog(e.currentTarget)));
+   reminders.append(button('הורדת ZIP…','quiet',e=>zipDialog(clientZipOptions(d),e.currentTarget)));
    container.append(reminders);
    const row2=node('div',{className:'action-row'});
    row2.append(button('יצירת קישור חדש…','link-button',e=>linkDialog(e.currentTarget)));
    container.append(row2);
    if(!c.hasLink)container.append(node('p',{className:'minor'},'ללקוח אין עדיין קישור שמור במערכת. עד שתיצרו קישור חדש, ההודעות יפנו לקישור שבמייל.'));
+  }
+  function clientZipOptions(d) {
+   const r=d.request||{},c=d.client||{},name=c.business_name||c.client_id||'',period=periodLabel(r.period);
+   const types=new Map((d.docTypes||[]).map(t=>[t.doc_type_id,t.name_he]));
+   const withFiles=new Set((d.uploads||[]).filter(u=>u.ingest_status==='ready').map(u=>(d.items||[]).find(i=>i.item_id===u.item_id)?.doc_type_id).filter(Boolean));
+   const docTypes=(d.items||[]).filter(i=>withFiles.has(i.doc_type_id)).map(i=>({id:i.doc_type_id,name:types.get(i.doc_type_id)||i.doc_type_id}));
+   const scopes=[{label:name+', '+period,fileLabel:name+'_'+r.period,params:{scope:'request',requestId:r.request_id}}];
+   if(docTypes.length)scopes.push({label:name+', '+period+', רק סוג מסמך:',fileLabel:name+'_'+r.period+'_סוג-מסמך',withType:true,params:{scope:'docType',requestId:r.request_id}});
+   scopes.push({label:name+', כל המחזורים',fileLabel:name+'_כל-המחזורים',params:{scope:'client',clientId:c.client_id}});
+   return {title:'הורדת ZIP: '+name,scopes,docTypes};
+  }
+  function cycleZip(cycleId,trigger) {
+   zipDialog({title:'הורדת ZIP של המחזור',scopes:[{label:'כל הלקוחות, '+periodLabel(cycleId),fileLabel:'כל-הלקוחות_'+cycleId,params:{scope:'cycle',cycleId}}]},trigger);
   }
   let lastContainer=null;
   function rerender(){if(detail&&lastContainer)render(lastContainer,detail);}
@@ -382,7 +481,7 @@
    }
    return false;
   }
-  return {render,rerender,fileButton,close,handleKey,isOpen:()=>!dialog.hidden,reset(){close();detail=null;lastContainer=null;}};
+  return {render,rerender,fileButton,close,handleKey,cycleZip,isOpen:()=>!dialog.hidden,reset(){close();detail=null;lastContainer=null;}};
  }
  window.NelioOfficeActions=Object.freeze({create,dateTime,uploadType,uploadProblem,sha256Hex,periodLabel,fillTemplate,composeReason,whatsappUrl,canReject,available,errorText,REASONS});
 })();
