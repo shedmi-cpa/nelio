@@ -309,3 +309,27 @@ test('a foreign account cannot read the log or change settings', async () => {
  for(const b of [{action:'logList'},{action:'settingsGet'},{action:'settingsSave',actor:'S2',values:{due_day:'10'}}])assert.equal((await h(request(b))).status,403);
  assert.equal(calls.some(c=>c.url.includes('/rpc/')),false);
 });
+
+// ---- Stage 6.3.4: ZIP file list ----
+test('zip file list takes exactly the ids of its scope', () => {
+ const base={action:'zipFiles',actor:'S2',includeRejected:true,dryRun:true};
+ assert.equal(parseAction({...base,scope:'request',requestId:'2026-10_C07'}).scope,'request');
+ assert.equal(parseAction({...base,scope:'docType',requestId:'R',docTypeId:'BANK_STATEMENT'}).docTypeId,'BANK_STATEMENT');
+ assert.equal(parseAction({...base,scope:'client',clientId:'C07'}).clientId,'C07');
+ assert.equal(parseAction({...base,scope:'cycle',cycleId:'2026-10'}).cycleId,'2026-10');
+ for(const bad of [{...base,scope:'cycle',cycleId:'2026-10',clientId:'C07'},{...base,scope:'request'},{...base,scope:'all'},
+  {...base,scope:'client',clientId:'../x'},{...base,scope:'request',requestId:'R',dryRun:'yes'},{action:'zipFiles',scope:'cycle',cycleId:'2026-10',includeRejected:true,dryRun:true}])
+  assert.equal(parseAction(bad),null);
+});
+test('zip file list goes to its routine without the action name, and foreign accounts are refused', async () => {
+ let seen;
+ const f=async(url,init)=>{const s=String(url);
+  if(s.includes('/auth/v1/user'))return Response.json(user);
+  if(s.includes('/rpc/nelio_office_files')){seen=JSON.parse(init.body).p;return Response.json({ok:true,files:[],count:0,totalBytes:0,overLimit:false});}
+  throw Error('unexpected '+s);};
+ const r=await createOfficeHandler(env,f)(request({action:'zipFiles',actor:'S2',scope:'cycle',cycleId:'2026-10',includeRejected:false,dryRun:true}));
+ assert.equal(r.status,200);assert.deepEqual(seen,{actor:'S2',scope:'cycle',cycleId:'2026-10',includeRejected:false,dryRun:true});
+ const calls=[],h=createOfficeHandler(env,writeStub({authUser:{...user,email:'x@gmail.com'},calls}));
+ assert.equal((await h(request({action:'zipFiles',actor:'S2',scope:'cycle',cycleId:'2026-10',includeRejected:true,dryRun:true}))).status,403);
+ assert.equal(calls.some(c=>c.url.includes('/rpc/')),false);
+});
