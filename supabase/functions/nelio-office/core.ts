@@ -2,7 +2,7 @@
 // Reads since 6.1; write actions since 6.3.1, all through the nelio_office_action database routine.
 export const OFFICE_ORIGIN = 'https://shedmi-cpa.github.io';
 export const OFFICE_EMAIL = 'shedmi.cpa@gmail.com';
-export const VERSION = '0.7.1';
+export const VERSION = '0.7.2';
 export type OfficeEnv = { url:string; anonKey:string; serviceKey:string; driveCredentials?:string; linkKey?:string };
 type HttpFetch = (input:RequestInfo|URL, init?:RequestInit)=>Promise<Response>;
 export type WriteAction =
@@ -15,7 +15,11 @@ export type WriteAction =
  {action:'callDone';requestId:string;actor:string;note:string}|
  {action:'uploadStart';requestId:string;actor:string;itemId:string;fileName:string;mimeType:string;sizeBytes:number;fileHash:string;uploadKey:string}|
  {action:'uploadFinish';requestId:string;actor:string;itemId:string;uploadId:string};
-type Action = {action:'session'}|{action:'overview';cycleId?:string}|{action:'callList';cycleId?:string}|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string}|WriteAction;
+export type SettingsAction={action:'logList';cycleId?:string}|{action:'settingsGet'}|
+ {action:'settingsSave';actor:string;values:Record<string,string>}|
+ {action:'templateSave';actor:string;templateId:string;subject:string;body:string};
+const SETTING_KEYS=['due_day','reminder1_days_before','reminder2_days_before','last_day_days_before','summary_days_after','send_time','quiet_start','quiet_end','friday_cutoff'];
+type Action = {action:'session'}|{action:'overview';cycleId?:string}|{action:'callList';cycleId?:string}|SettingsAction|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string}|WriteAction;
 const WRITE_KEYS:Record<WriteAction['action'],string[]>={
  reject:['action','requestId','actor','uploadId','reason','dryRun'],
  approve:['action','requestId','actor'],
@@ -32,7 +36,7 @@ const ROUTINE:Record<WriteAction['action'],string>={reject:'nelio_office_action'
  whatsapp:'nelio_office_action',rotateLink:'nelio_office_action',remindNow:'nelio_office_remind',callDone:'nelio_office_calls',
  uploadStart:'nelio_office_upload',uploadFinish:'nelio_office_upload'};
 const UPLOAD_TYPES=['image/jpeg','image/png','image/webp','image/heic','image/heif','application/pdf'];
-const FAILURE_STATUS:Record<string,number>={BAD_TYPE:400,TOO_BIG:413,UPLOAD_CONFLICT:409,UPLOAD_PENDING:409,QUOTA_EXCEEDED:409,BAD_ACTOR:400,BAD_REASON:400,BAD_NOTE:400,BAD_REQUEST:400,NOT_FOUND:404,NOT_ALLOWED:409,NOTHING_MISSING:409,TEMPLATE_MISSING:500};
+const FAILURE_STATUS:Record<string,number>={BAD_VALUE:400,BAD_ORDER:400,BAD_QUIET:400,LINK_REQUIRED:400,BAD_TYPE:400,TOO_BIG:413,UPLOAD_CONFLICT:409,UPLOAD_PENDING:409,QUOTA_EXCEEDED:409,BAD_ACTOR:400,BAD_REASON:400,BAD_NOTE:400,BAD_REQUEST:400,NOT_FOUND:404,NOT_ALLOWED:409,NOTHING_MISSING:409,TEMPLATE_MISSING:500};
 type User = {id?:string;email?:string;email_confirmed_at?:string|null;app_metadata?:{providers?:string[]};identities?:{provider?:string}[]};
 
 function output(data:unknown,code:number,origin:string|null):Response {
@@ -59,6 +63,7 @@ export function parseAction(v:unknown):Action|null{
   if(x.cycleId===undefined)return {action:'callList'};
   if(typeof x.cycleId==='string'&&/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(x.cycleId))return {action:'callList',cycleId:x.cycleId};
  }
+ const settings=parseSettings(x);if(settings)return settings;
  if(typeof x.action==='string'&&Object.hasOwn(WRITE_KEYS,x.action))return parseWrite(x);
  return null;
 }
@@ -92,6 +97,35 @@ function parseWrite(x:Record<string,unknown>):WriteAction|null{
  return null;
 }
 // Removes control characters and direction marks that could disguise text, and collapses spaces.
+function parseSettings(x:Record<string,unknown>):SettingsAction|null{
+ const keys=Object.keys(x),only=(...k:string[])=>keys.every(n=>k.includes(n));
+ if(x.action==='settingsGet'&&only('action'))return {action:'settingsGet'};
+ if(x.action==='logList'&&only('action','cycleId')){
+  if(x.cycleId===undefined)return {action:'logList'};
+  return typeof x.cycleId==='string'&&/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(x.cycleId)?{action:'logList',cycleId:x.cycleId}:null;
+ }
+ if(typeof x.actor!=='string'||!/^S[0-9]{1,3}$/.test(x.actor))return null;
+ if(x.action==='settingsSave'&&only('action','actor','values')){
+  const v=x.values;
+  if(!v||typeof v!=='object'||Array.isArray(v))return null;
+  const entries=Object.entries(v as Record<string,unknown>);
+  if(!entries.length||!entries.every(([k,val])=>SETTING_KEYS.includes(k)&&typeof val==='string'&&val.length<=5))return null;
+  return {action:'settingsSave',actor:x.actor,values:Object.fromEntries(entries) as Record<string,string>};
+ }
+ if(x.action==='templateSave'&&only('action','actor','templateId','subject','body')){
+  if(typeof x.templateId!=='string'||!/^[A-Z0-9_]{2,40}$/.test(x.templateId))return null;
+  const body=cleanMultiline(x.body,1500);
+  if(!body||typeof x.subject!=='string')return null;
+  return {action:'templateSave',actor:x.actor,templateId:x.templateId,subject:cleanText(x.subject,200),body};
+ }
+ return null;
+}
+// Like cleanText, but a message body keeps its line breaks.
+export function cleanMultiline(v:unknown,max:number):string{
+ if(typeof v!=='string')return '';
+ return v.replace(/\r\n?/g,'\n').split('\n').map(line=>line.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g,' ').replace(/[ \t]+/g,' ').trim())
+  .join('\n').replace(/\n{3,}/g,'\n\n').trim().slice(0,max);
+}
 export function cleanText(v:unknown,max:number):string{
  if(typeof v!=='string')return '';
  return v.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
@@ -100,7 +134,7 @@ function validId(v:unknown):v is string{return typeof v==='string'&&v.length>0&&
 async function smallJson(r:Request):Promise<unknown>{
  const reader=r.body?.getReader();if(!reader)throw Error('bad body');
  let size=0;const chunks:Uint8Array[]=[];
- try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>2048)throw Error('too large');chunks.push(value);}}
+ try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>8192)throw Error('too large');chunks.push(value);}}
  finally{reader.releaseLock();}
  const b=new Uint8Array(size);let off=0;for(const c of chunks){b.set(c,off);off+=c.length;}
  return JSON.parse(new TextDecoder().decode(b));
@@ -237,6 +271,19 @@ export function createOfficeHandler(env:OfficeEnv,f:HttpFetch=fetch){
    if(!isAuthorizedOfficeUser(user))return output({ok:false,code:'FORBIDDEN'},403,origin);
    if(action.action==='session')return output({ok:true,office:true,email:OFFICE_EMAIL,version:VERSION},200,origin);
    if(isWrite(action))return await officeWrite(action,env,f,origin);
+   if(action.action==='logList'||action.action==='settingsGet'||action.action==='settingsSave'||action.action==='templateSave'){
+    const routine=action.action==='logList'?'nelio_office_log':'nelio_office_settings';
+    const p:Record<string,unknown>=action.action==='logList'?(action.cycleId?{cycleId:action.cycleId}:{}):
+     action.action==='settingsGet'?{action:'get'}:action.action==='settingsSave'?{action:'save',actor:action.actor,values:action.values}:
+     {action:'saveTemplate',actor:action.actor,templateId:action.templateId,subject:action.subject,body:action.body};
+    const result=await rpc(routine,p,env,f);
+    if(result.ok!==true){
+     const code=typeof result.code==='string'&&Object.hasOwn(FAILURE_STATUS,result.code)?result.code:'UNAVAILABLE';
+     const key=typeof result.key==='string'&&SETTING_KEYS.includes(result.key)?{key:result.key}:{};
+     return output({ok:false,code,...key},FAILURE_STATUS[code]??503,origin);
+    }
+    return output(result,200,origin);
+   }
    if(action.action==='callList'){
     const result=await rpc('nelio_office_calls',action.cycleId?{action:'callList',cycleId:action.cycleId}:{action:'callList'},env,f);
     if(result.ok!==true)return output({ok:false,code:result.code==='NOT_FOUND'?'NOT_FOUND':'UNAVAILABLE'},result.code==='NOT_FOUND'?404:503,origin);

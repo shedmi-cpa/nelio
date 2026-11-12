@@ -6,7 +6,7 @@
  if(!c||!lib?.createClient){msg.textContent='רכיב ההתחברות לא נטען. בדקו את החיבור לאינטרנט ורעננו.';msg.classList.add('error');return;}
  const auth=lib.createClient(c.supabaseUrl,c.publishableKey,{auth:{flowType:'pkce',autoRefreshToken:true,detectSessionInUrl:true,persistSession:true}});
  let activeId=null,overview=null,currentRequest=null,sequence=0,returnFocus=null;
- if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary||!window.NelioOfficeActions?.create||!window.NelioCallList?.create) {
+ if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary||!window.NelioOfficeActions?.create||!window.NelioCallList?.create||!window.NelioLogSettings?.create) {
   msg.textContent='רכיב תצוגת המסמכים לא נטען. רעננו את הדף.';
   msg.classList.add('error');return;
  }
@@ -39,11 +39,18 @@
   openClient:(id,name,trigger)=>void openClient(id,name,trigger),
   onCount:n=>{el('call-count').textContent=n===null?'':' ('+n+')';}
  });
- const tabs=[el('tab-clients'),el('tab-calls')];
+ const logSettings=window.NelioLogSettings.create({
+  officeCall,staffName,dateTime:window.NelioOfficeActions.dateTime,
+  getActor:()=>actorSelect.value,
+  onActorMissing:()=>{whoLabel.classList.add('needed');actorSelect.focus();}
+ });
+ const tabs=[el('tab-clients'),el('tab-calls'),el('tab-log'),el('tab-settings')];
  function showTab(tab,focus=false){
   for(const t of tabs){const on=t===tab;t.setAttribute('aria-selected',String(on));t.tabIndex=on?0:-1;el(t.getAttribute('aria-controls')).hidden=!on;}
   if(focus)tab.focus();
   if(tab.id==='tab-calls')void calls.load(overview?.cycleId);
+  if(tab.id==='tab-log')void logSettings.loadLog(overview?.cycleId);
+  if(tab.id==='tab-settings')void logSettings.loadSettings();
  }
  for(const t of tabs){
   t.addEventListener('click',()=>showTab(t));
@@ -105,6 +112,7 @@
   actorSelect.value=staff.has(chosenActor)?chosenActor:'';whoLabel.hidden=false;
   calls.setStaff(d.staff||[],actorSelect.value);
   if(!keepDrawer)void calls.load(d.cycleId);
+  if(el('tab-log').getAttribute('aria-selected')==='true')void logSettings.loadLog(d.cycleId);
   const sf=el('filter-staff'),old=sf.value;sf.replaceChildren(new Option('כולם',''));for(const [id,name] of staff)sf.add(new Option(name,id));sf.value=old;
   renderRows();
  } 

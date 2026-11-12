@@ -19,6 +19,7 @@
 <script src="request-summary.js" defer></script>
 <script src="office-actions.js" defer></script>
 <script src="call-list.js" defer></script>
+<script src="log-settings.js" defer></script>
 <script src="app.js" defer></script>
 </head>
 <body>
@@ -35,7 +36,7 @@
 <article><span>לא התחילו</span><strong id="count-not-started">—</strong></article>
 <article><span>ממתינים לבדיקה</span><strong id="count-pending">—</strong></article>
 </div>
-<div class="tabs" role="tablist" aria-label="אזורי הלוח"><button type="button" role="tab" id="tab-clients" aria-selected="true" aria-controls="panel-clients">לקוחות במחזור</button><button type="button" role="tab" id="tab-calls" aria-selected="false" aria-controls="panel-calls" tabindex="-1">טלפונים להיום<span id="call-count" class="tab-count"></span></button></div>
+<div class="tabs" role="tablist" aria-label="אזורי הלוח"><button type="button" role="tab" id="tab-clients" aria-selected="true" aria-controls="panel-clients">לקוחות במחזור</button><button type="button" role="tab" id="tab-calls" aria-selected="false" aria-controls="panel-calls" tabindex="-1">טלפונים להיום<span id="call-count" class="tab-count"></span></button><button type="button" role="tab" id="tab-log" aria-selected="false" aria-controls="panel-log" tabindex="-1">יומן פעולות</button><button type="button" role="tab" id="tab-settings" aria-selected="false" aria-controls="panel-settings" tabindex="-1">הגדרות</button></div>
 <section class="sheet" id="panel-clients" role="tabpanel" aria-labelledby="tab-clients"><div class="table-heading"><h2>לקוחות במחזור</h2><span id="table-count" class="minor"></span></div>
 <div class="filters" aria-label="סינון לקוחות"><label>חיפוש לקוח<input id="client-search" type="search" autocomplete="off" placeholder="שם עסק או מזהה"></label><label>מנהל חשבונות<select id="filter-staff"><option value="">כולם</option></select></label><label>מצב<select id="filter-status"><option value="">כל המצבים</option><option value="not_started">לא התחילו</option><option value="partial">השלימו חלק</option><option value="submitted">ממתינים לבדיקה</option><option value="complete">הושלמו</option></select></label><label>דיווח<select id="filter-frequency"><option value="">כל התדירויות</option><option value="monthly">חודשי</option><option value="bimonthly">דו־חודשי</option></select></label></div>
 <div class="table-scroll"><table><thead><tr><th scope="col">בית העסק</th><th scope="col">מנהל החשבונות</th><th scope="col">מצב</th><th scope="col">פעולה אחרונה</th></tr></thead><tbody id="rows"></tbody></table></div>
@@ -46,6 +47,27 @@
 <div class="filters"><label>מנהל חשבונות<select id="call-staff"><option value="">כולם</option></select></label></div>
 <div class="table-scroll"><table><thead><tr><th scope="col">בית העסק</th><th scope="col">איש קשר</th><th scope="col">טלפון</th><th scope="col">מה חסר</th><th scope="col">תזכורות</th><th scope="col">שיחה</th></tr></thead><tbody id="call-rows"></tbody></table></div>
 <p class="fine">"טופל" רק רושם ביומן שהתקשרו היום. הוא לא משנה את מצב הלקוח.</p>
+</section>
+<section class="sheet" id="panel-log" role="tabpanel" aria-labelledby="tab-log" hidden><div class="table-heading"><h2>יומן פעולות</h2><span id="log-count" class="minor"></span></div>
+<p id="log-note" class="minor" role="status" aria-live="polite"></p>
+<div class="filters"><label>לקוח<input id="log-search" type="search" autocomplete="off" placeholder="שם עסק או מזהה"></label><label>סוג<select id="log-type"><option value="">כל הפעולות</option><option value="office">פעולות משרד</option><option value="client">פעולות לקוח</option><option value="message">הודעות</option><option value="system">מערכת</option></select></label></div>
+<div class="table-scroll"><table><thead><tr><th scope="col">מתי</th><th scope="col">מי</th><th scope="col">לקוח</th><th scope="col">מה קרה</th></tr></thead><tbody id="log-rows"></tbody></table></div>
+</section>
+<section class="sheet" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden><div class="table-heading"><h2>הגדרות</h2></div>
+<p class="minor">המחזור האוטומטי (שלב 7) ישתמש בערכים האלה. שמירה נרשמת ביומן עם שם העובד.</p>
+<form id="settings-form" class="settings-grid" novalidate>
+<fieldset id="settings-cycle"><legend>המחזור</legend></fieldset>
+<fieldset id="settings-quiet"><legend>שעות שקט</legend></fieldset>
+<div class="settings-actions"><button type="button" id="settings-save" class="primary">שמירת ההגדרות</button><p id="settings-message" role="status" aria-live="polite"></p></div>
+<fieldset class="wide"><legend>נוסחי ההודעות</legend>
+<label for="template-select">תבנית<select id="template-select"></select></label>
+<label for="template-subject">נושא המייל<input id="template-subject" type="text" maxlength="200"></label>
+<label for="template-body">הנוסח<textarea id="template-body" rows="7" maxlength="1500"></textarea></label>
+<p id="template-help" class="minor"></p>
+<div class="settings-actions"><button type="button" id="template-save" class="primary">שמירת הנוסח</button><button type="button" id="template-reset" class="quiet">ביטול שינויים</button><p id="template-message" role="status" aria-live="polite"></p></div>
+</fieldset>
+<fieldset class="wide"><legend>חגים</legend><p class="minor">לקריאה בלבד בשלב הזה. בחגים לא נשלחות הודעות.</p><ul id="holiday-list" class="holiday-list"></ul></fieldset>
+</form>
 </section></section>
 </main>
 <div id="drawer-scrim" class="drawer-scrim" hidden></div>
