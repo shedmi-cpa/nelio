@@ -15,6 +15,13 @@ This backend replaces Apps Script and Sheets for the existing client page. Stage
 - Maximum upload: 10 MiB (or lower Settings limit). Per request: 200 files/reservations and 250 MiB. File signatures and MIME allowlists are checked on the server.
 - Confirmation messages retain the old semantics: once per request, simulated in demo mode, queued otherwise. No mail is sent by this backend. Quiet-hour handling and actual delivery remain stage 7.
 
+## Office actions (stage 6.3.1, `nelio-office` 0.7.0)
+
+- Write actions: `reject` (per file, D48), `approve`, `completeManual`, `whatsapp` (preview with `dryRun`, then logged and counted), `rotateLink`. Every call passes the same Google office check as the reads (D45), and names the staff member working now (`actor`, log only, not a permission).
+- All state changes happen in one routine, `nelio_office_action` (migration `20261112120000_nelio_office_actions.sql`), executable only by `service_role`. It follows the allowed transitions in `project/data-model.md` 3.1 and 3.2, writes `activity_log`, and records messages as `simulated` in demo mode. No RLS or grant changes.
+- D47: `clients.token_enc` holds the personal-link token encrypted with AES-256-GCM, bound to the client id. Only `nelio-office` encrypts or decrypts, with the Edge secret `NELIO_LINK_KEY` (32 random bytes, base64, e.g. `openssl rand -base64 32`). The ciphertext never reaches the browser and the token never reaches the log. Without the secret, rotation answers `LINK_KEY_MISSING` and messages point to the link in the client's email.
+- Local SQL tests: `bash supabase/tests/run_sql_tests.sh` applies every migration to a throwaway PostgreSQL with stubs for the Supabase roles and storage, then runs `database.sql` and `office_actions.sql`. CI runs it on every pull request.
+
 ## Deploy
 
 The initial development deployment was applied through the connected Supabase tools. Migration filenames match the remote migration history.
@@ -25,6 +32,7 @@ For repeatable deployments from GitHub, set repository secrets `SUPABASE_ACCESS_
 npx --yes supabase@2.83.0 link --project-ref ryqcyjajdioaxtpbxjzf
 npx --yes supabase@2.83.0 db push --linked
 npx --yes supabase@2.83.0 functions deploy nelio-api --project-ref ryqcyjajdioaxtpbxjzf
+npx --yes supabase@2.83.0 functions deploy nelio-office --project-ref ryqcyjajdioaxtpbxjzf
 ```
 
 Do not reapply an already recorded migration. Future changes get a new migration with `supabase migration new <name>`.

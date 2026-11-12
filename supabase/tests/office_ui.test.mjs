@@ -284,3 +284,40 @@ test('optional "other" document is not shown as missing, and the drawer explains
  // Even a wrongly flagged required=true on OTHER must not count.
  assert.equal(requiredSummary([{doc_type_id:'OTHER',required:true,status:'missing'}],name,'partial').text,'');
 });
+
+// ---- Stage 6.3.1: office actions ----
+await import('../../docs/office/office-actions.js');
+const officeActions=global.window.NelioOfficeActions;
+const actionsSource=fs.readFileSync(new URL('../../docs/office/office-actions.js', import.meta.url), 'utf8');
+test('period labels and template filling match the server rules', () => {
+ assert.equal(officeActions.periodLabel('2026-10'),'אוקטובר 2026');
+ assert.equal(officeActions.periodLabel('2026-09_10'),'ספטמבר–אוקטובר 2026');
+ assert.equal(officeActions.fillTemplate('שלום [שם], [שם] ו[סיבה]',{'[שם]':'אורנה','[סיבה]':'מטושטש'}),'שלום אורנה, אורנה ומטושטש');
+ assert.equal(officeActions.composeReason('התמונה מטושטשת','  לא רואים\nסכומים '),'התמונה מטושטשת. לא רואים סכומים');
+ assert.equal(officeActions.composeReason('','רק פירוט'),'רק פירוט');
+ assert.equal(officeActions.composeReason('','  '),'');
+});
+test('WhatsApp link has no phone number and encodes the whole text', () => {
+ const url=officeActions.whatsappUrl('עוד חסר: דף בנק & אשראי https://x.test/#t=abc');
+ assert.ok(url.startsWith('https://wa.me/?text='));
+ assert.equal(decodeURIComponent(url.split('text=')[1]),'עוד חסר: דף בנק & אשראי https://x.test/#t=abc');
+});
+test('buttons follow the request state and only received, active files can be rejected', () => {
+ assert.deepEqual(officeActions.available('submitted'),{approve:true,manual:true,whatsapp:false});
+ assert.deepEqual(officeActions.available('partial'),{approve:false,manual:true,whatsapp:true});
+ assert.deepEqual(officeActions.available('complete'),{approve:false,manual:false,whatsapp:false});
+ const item={status:'received'};
+ assert.equal(officeActions.canReject({ingest_status:'ready',status:'active'},item),true);
+ assert.equal(officeActions.canReject({ingest_status:'pending',status:'active'},item),false);
+ assert.equal(officeActions.canReject({ingest_status:'ready',status:'rejected'},item),false);
+ assert.equal(officeActions.canReject({ingest_status:'ready',status:'active'},{status:'missing'}),false);
+});
+test('errors are Hebrew sentences and the page keeps no documents or secrets', () => {
+ for(const code of ['NOT_ALLOWED','LINK_KEY_MISSING','TEMPLATE_MISSING','SOMETHING_NEW'])assert.match(officeActions.errorText(code),/[א-ת]/);
+ assert.doesNotMatch(actionsSource,/localStorage|service_role|serviceKey|NELIO_LINK_KEY|token_enc/);
+ assert.match(htmlSource,/id="action-dialog"/);assert.match(htmlSource,/id="actor"/);assert.match(htmlSource,/office-actions\.js/);
+});
+test('reminder time uses the Israeli 24-hour format in Asia/Jerusalem', () => {
+ assert.equal(officeActions.dateTime('2026-11-09T07:00:00Z'),'09/11/2026 09:00');
+ assert.equal(officeActions.dateTime('2026-08-01T21:30:00Z'),'02/08/2026 00:30');
+});

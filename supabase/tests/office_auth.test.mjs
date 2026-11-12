@@ -127,3 +127,94 @@ test('pending upload does not receive a signed URL',async()=>{
  assert.equal((await h(request({action:'openFile',requestId:'R1',uploadId:'U_01'}))).status,404);
  assert.equal(calls.some(s=>s.includes('/storage/v1/object/sign/')),false);
 });
+
+// ---- Stage 6.3.1: office write actions ----
+import {encryptToken,decryptToken,newToken,cleanText} from '../functions/nelio-office/core.ts';
+const linkKey=Buffer.alloc(32,7).toString('base64');
+function writeStub({authUser=user,tokenEnc='',rpcResult={ok:true,requestStatus:'partial'},calls=[]}={}){return async(url,init)=>{
+ const s=String(url);calls.push({url:s,init});
+ if(s.includes('/auth/v1/user'))return new Response(JSON.stringify(authUser),{status:authUser?200:401});
+ if(s.includes('/requests?'))return Response.json([{request_id:'2026-10_C07',client_id:'C07'}]);
+ if(s.includes('/clients?'))return Response.json([{token_enc:tokenEnc}]);
+ if(s.includes('/rest/v1/rpc/nelio_office_action'))return Response.json(typeof rpcResult==='function'?rpcResult(JSON.parse(init.body).p):rpcResult);
+ throw new Error('unexpected '+s);
+};}
+test('write actions accept exact fields only, a staff id and clean text',()=>{
+ assert.deepEqual(parseAction({action:'approve',requestId:'2026-10_C07',actor:'S2'}),{action:'approve',requestId:'2026-10_C07',actor:'S2'});
+ assert.deepEqual(parseAction({action:'reject',requestId:'R',actor:'S2',uploadId:'U_1',reason:' מטושטש\u202e  מאוד '}),
+  {action:'reject',requestId:'R',actor:'S2',uploadId:'U_1',reason:'מטושטש מאוד',dryRun:false});
+ for(const bad of [
+  {action:'approve',requestId:'R'},{action:'approve',requestId:'R',actor:'admin'},{action:'approve',requestId:'R',actor:'S2',status:'complete'},
+  {action:'reject',requestId:'R',actor:'S2',uploadId:'U',reason:'   '},{action:'reject',requestId:'R',actor:'S2',uploadId:'../x',reason:'a'},
+  {action:'completeManual',requestId:'R',actor:'S2',note:''},{action:'whatsapp',requestId:'R',actor:'S2',dryRun:'yes'},
+  {action:'rotateLink',requestId:'R',actor:'S2',newToken:'chosen-by-browser'},
+ ])assert.equal(parseAction(bad),null);
+ assert.equal(cleanText('א'.repeat(400),300).length,300);
+});
+test('foreign identity cannot run any write action',async()=>{
+ for(const body of [{action:'approve',requestId:'R',actor:'S2'},{action:'rotateLink',requestId:'R',actor:'S2'},{action:'reject',requestId:'R',actor:'S2',uploadId:'U',reason:'x'}]){
+  const calls=[],h=createOfficeHandler({...env,linkKey},writeStub({authUser:{...user,email:'other@gmail.com'},calls}));
+  assert.equal((await h(request(body))).status,403);
+  assert.equal(calls.some(c=>c.url.includes('/rpc/')),false);
+ }
+});
+test('token encryption round-trips and is bound to the client',async()=>{
+ const t=newToken();assert.match(t,/^[A-Za-z0-9_-]{43}$/);
+ const enc=await encryptToken(t,'C07',linkKey);
+ assert.match(enc,/^v1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{40,}$/);assert.equal(enc.includes(t),false);
+ assert.equal(await decryptToken(enc,'C07',linkKey),t);
+ assert.equal(await decryptToken(enc,'C08',linkKey),null);
+ assert.equal(await decryptToken(enc,'C07',Buffer.alloc(32,9).toString('base64')),null);
+ assert.equal(await decryptToken('garbage','C07',linkKey),null);
+});
+test('whatsapp passes the decrypted token to the database and never to the log of calls',async()=>{
+ const t=newToken(),enc=await encryptToken(t,'C07',linkKey),calls=[];
+ let seen;
+ const h=createOfficeHandler({...env,linkKey},writeStub({tokenEnc:enc,calls,rpcResult:p=>{seen=p;return {ok:true,text:'x',linkMissing:false};}}));
+ const r=await h(request({action:'whatsapp',requestId:'2026-10_C07',actor:'S2',dryRun:true}));
+ assert.equal(r.status,200);assert.equal(seen.token,t);assert.equal(seen.dryRun,true);assert.equal(seen.actor,'S2');
+ const rpcCall=calls.find(c=>c.url.includes('/rpc/'));
+ assert.equal(rpcCall.init.method,'POST');assert.equal(rpcCall.init.headers.apikey,env.serviceKey);
+});
+test('without a link key the token is simply missing, and rotation is refused clearly',async()=>{
+ let seen;const h=createOfficeHandler(env,writeStub({tokenEnc:'v1.x',rpcResult:p=>{seen=p;return {ok:true};}}));
+ assert.equal((await h(request({action:'whatsapp',requestId:'R',actor:'S2'}))).status,200);
+ assert.equal('token' in seen,false);
+ const calls=[],h2=createOfficeHandler(env,writeStub({calls}));
+ const r=await h2(request({action:'rotateLink',requestId:'R',actor:'S2'}));
+ assert.equal(r.status,501);assert.equal((await r.json()).code,'LINK_KEY_MISSING');
+ assert.equal(calls.some(c=>c.url.includes('/rpc/')),false);
+});
+test('rotation generates the token on the server and stores only ciphertext plus hash input',async()=>{
+ let seen;
+ const h=createOfficeHandler({...env,linkKey},writeStub({rpcResult:p=>{seen=p;return {ok:true,link:'https://shedmi-cpa.github.io/nelio/#t='+p.newToken};}}));
+ const r=await h(request({action:'rotateLink',requestId:'R',actor:'S2'}));
+ assert.equal(r.status,200);
+ assert.match(seen.newToken,/^[A-Za-z0-9_-]{43}$/);
+ assert.equal(await decryptToken(seen.newTokenEnc,'C07',linkKey),seen.newToken);
+});
+test('database refusals map to clear HTTP codes; unknown codes are not echoed',async()=>{
+ for(const [code,status] of [['NOT_ALLOWED',409],['BAD_ACTOR',400],['TEMPLATE_MISSING',500],['NOT_FOUND',404]]){
+  const h=createOfficeHandler(env,writeStub({rpcResult:{ok:false,code}}));
+  const r=await h(request({action:'approve',requestId:'R',actor:'S2'}));
+  assert.equal(r.status,status);assert.equal((await r.json()).code,code);
+ }
+ const h=createOfficeHandler(env,writeStub({rpcResult:{ok:false,code:'<script>'}}));
+ const r=await h(request({action:'approve',requestId:'R',actor:'S2'}));
+ assert.equal(r.status,503);assert.equal((await r.json()).code,'UNAVAILABLE');
+});
+test('client detail tells whether a link is stored without sending the ciphertext',async()=>{
+ const f=async(url)=>{
+  const s=String(url);
+  if(s.includes('/auth/v1/user'))return Response.json(user);
+  if(s.includes('/requests?'))return Response.json([{request_id:'R',client_id:'C07',status:'partial'}]);
+  if(s.includes('/clients?'))return Response.json([{client_id:'C07',business_name:'דוגמה',token_enc:'v1.SECRETCIPHERTEXT'}]);
+  if(s.includes('/items?')||s.includes('/uploads?')||s.includes('/doc_types?'))return Response.json([]);
+  if(s.includes('/templates?'))return Response.json([{template_id:'WHATSAPP',body:'[מה שחסר]'}]);
+  throw Error('unexpected '+s);
+ };
+ const r=await createOfficeHandler(env,f)(request({action:'clientDetail',requestId:'R'}));
+ const text=await r.text();
+ assert.equal(r.status,200);assert.equal(text.includes('SECRETCIPHERTEXT'),false);
+ const d=JSON.parse(text);assert.equal(d.client.hasLink,true);assert.equal(d.linkKeyConfigured,false);assert.equal(d.templates.length,1);
+});

@@ -1,4 +1,4 @@
-/* Stage 6.1. Authorization is enforced by the server, never this UI. */
+/* Stage 6.1, actions since 6.3.1. Authorization is enforced by the server, never this UI. */
 (() => {
  'use strict';
  const c=window.NELIO_OFFICE_CONFIG,lib=window.supabase;
@@ -6,7 +6,7 @@
  if(!c||!lib?.createClient){msg.textContent='רכיב ההתחברות לא נטען. בדקו את החיבור לאינטרנט ורעננו.';msg.classList.add('error');return;}
  const auth=lib.createClient(c.supabaseUrl,c.publishableKey,{auth:{flowType:'pkce',autoRefreshToken:true,detectSessionInUrl:true,persistSession:true}});
  let activeId=null,overview=null,currentRequest=null,sequence=0,returnFocus=null;
- if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary) {
+ if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary||!window.NelioOfficeActions?.create) {
   msg.textContent='רכיב תצוגת המסמכים לא נטען. רעננו את הדף.';
   msg.classList.add('error');return;
  }
@@ -14,6 +14,30 @@
  const isNarrow=()=>window.matchMedia('(max-width: 1150px)').matches;
  const summary=window.NelioRequestSummary;
  const viewer=window.NelioDocumentPreview.create({officeCall,getCurrentRequest:()=>currentRequest,supabaseUrl:c.supabaseUrl,isNarrow,onChange:()=>syncDrawerMode()});
+ // "Who works now" is recorded in the log only (D50). It is a convenience kept in this browser, not a permission.
+ const actorSelect=el('actor'),whoLabel=el('who-label'),ACTOR_KEY='nelio-office-actor';
+ function storedActor(){try{return localStorage.getItem(ACTOR_KEY)||'';}catch{return '';}}
+ actorSelect.addEventListener('change',()=>{whoLabel.classList.remove('needed');try{localStorage.setItem(ACTOR_KEY,actorSelect.value);}catch{/* private mode */}if(typeof actions!=='undefined')actions.rerender();});
+ function staffName(id){return (overview?.staff||[]).find(x=>x.staff_id===id)?.name||'';}
+ function detailNote(text,error=false){const n=el('detail-message');n.textContent=text;n.classList.toggle('error',error);}
+ const actions=window.NelioOfficeActions.create({
+  officeCall,staffName,
+  getActor:()=>actorSelect.value,
+  staffList:()=>overview?.staff||[],
+  setActor:id=>{actorSelect.value=id;actorSelect.dispatchEvent(new Event('change'));detailNote('');},
+  onActorMissing:()=>{
+   whoLabel.classList.add('needed');detailNote('בחרו קודם מי עובד עכשיו.',true);
+   const inline=el('actor-drawer');(inline&&inline.getClientRects().length?inline:actorSelect).focus();
+  },
+  announce:(text,error=false)=>detailNote(text,error),
+  onChanged:()=>void afterAction()
+ });
+ async function afterAction(){
+  const requestId=currentRequest,note=el('detail-message').textContent,isError=el('detail-message').classList.contains('error');
+  if(requestId)await openClient(requestId,el('detail-title').textContent,returnFocus,{keepNote:{text:note,error:isError}});
+  if(!panel.hidden&&(!document.activeElement||document.activeElement===document.body||!document.activeElement.isConnected))el('detail-title').focus();
+  try{const fresh=await officeCall('overview',overview?.cycleId?{cycleId:overview.cycleId}:{});render(fresh,true);}catch{/* the table refreshes on the next load */}
+ }
  function setInert(value) {
   document.querySelector('main').inert=value;
   document.querySelector('header.top').inert=value;
@@ -32,7 +56,7 @@
   if(narrow&&!panel.contains(document.activeElement))el('close-detail').focus();
  }
  function closeDrawer(restore=true) {
-  ++sequence;currentRequest=null;viewer.reset();
+  ++sequence;currentRequest=null;viewer.reset();actions.reset();el('detail-actions').replaceChildren();
   panel.hidden=true;scrim.hidden=true;
   document.body.classList.remove('drawer-open','drawer-modal');
   setInert(false);
@@ -40,12 +64,12 @@
   returnFocus=null;
  }
  function message(s,error=false){msg.hidden=false;msg.textContent=s;msg.classList.toggle('error',error);}
- function signedOut(s='כדי להיכנס ללוח, התחברו באמצעות חשבון המשרד.'){activeId=null;overview=null;closeDrawer(false);dashboard.hidden=true;login.hidden=false;logout.hidden=true;message(s);}
+ function signedOut(s='כדי להיכנס ללוח, התחברו באמצעות חשבון המשרד.'){activeId=null;overview=null;closeDrawer(false);whoLabel.hidden=true;dashboard.hidden=true;login.hidden=false;logout.hidden=true;message(s);}
  const statusName={complete:'הושלם',partial:'השלים חלק',not_started:'לא התחיל',submitted:'ממתין לבדיקה'};
  const date=value=>value?new Intl.DateTimeFormat('he-IL',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'Asia/Jerusalem'}).format(new Date(value)):'—';
  function cell(tr,value,cl=''){const td=document.createElement('td');td.textContent=String(value??'—');if(cl)td.className=cl;tr.append(td);}
- function render(d){
-  overview=d;closeDrawer(false);
+ function render(d,keepDrawer=false){
+  overview=d;if(!keepDrawer)closeDrawer(false);
   const cycles=Array.isArray(d.cycles)?d.cycles:[],requests=Array.isArray(d.requests)?d.requests:[],clients=new Map((d.clients||[]).map(x=>[x.client_id,x])),staff=new Map((d.staff||[]).map(x=>[x.staff_id,x.name]));
   cycle.replaceChildren();
   for(const x of cycles){const op=document.createElement('option');op.value=x.cycle_id;op.textContent=x.cycle_id;op.selected=x.cycle_id===d.cycleId;cycle.append(op);}
@@ -54,6 +78,9 @@
   const counts={complete:0,partial:0,not_started:0,submitted:0};
   for(const r of requests){if(Object.hasOwn(counts,r.status))counts[r.status]++;else counts.submitted++;}
   el('count-complete').textContent=counts.complete;el('count-partial').textContent=counts.partial;el('count-not-started').textContent=counts.not_started;el('count-pending').textContent=counts.submitted;
+  const chosenActor=actorSelect.value||storedActor();actorSelect.replaceChildren(new Option('בחרו',''));
+  for(const [id,name] of staff)actorSelect.add(new Option(name,id));
+  actorSelect.value=staff.has(chosenActor)?chosenActor:'';whoLabel.hidden=false;
   const sf=el('filter-staff'),old=sf.value;sf.replaceChildren(new Option('כולם',''));for(const [id,name] of staff)sf.add(new Option(name,id));sf.value=old;
   renderRows();
  } 
@@ -71,10 +98,11 @@
   if(!session?.access_token)throw Object.assign(new Error('UNAUTHORIZED'),{code:'UNAUTHORIZED'});
   return call(action,session.access_token,payload);
  }
- async function openClient(requestId, name, trigger) {
-  const ticket=++sequence;
+ async function openClient(requestId, name, trigger, {keepNote}={}) {
+  const ticket=++sequence,refreshing=Boolean(keepNote)&&currentRequest===requestId,scroll=el('client-detail').querySelector('.drawer-contents');
+  const scrollTop=refreshing?scroll.scrollTop:0;
   currentRequest=requestId;returnFocus=trigger||returnFocus;
-  viewer.reset();
+  viewer.reset();if(!refreshing)actions.close();el('detail-actions').replaceChildren();el('detail-message').classList.remove('error');
   const container=el('detail-items');
   container.replaceChildren();
   el('detail-title').textContent=name||'תיק לקוח';
@@ -84,14 +112,16 @@
   panel.hidden=false;
   document.body.classList.add('drawer-open');
   syncDrawerMode();
-  el('detail-title').focus();
+  if(!refreshing)el('detail-title').focus();
   try {
    const d=await officeCall('clientDetail',{requestId});
    if(ticket!==sequence||currentRequest!==requestId)return;
    el('detail-title').textContent=d.client.business_name||'תיק לקוח';
    el('detail-meta').textContent='מזהה '+d.client.client_id+' | '+d.request.cycle_id+' | '+
     (d.client.frequency==='bimonthly'?'דיווח דו־חודשי':'דיווח חודשי')+' | '+(statusName[d.request.status]||'');
-   el('detail-message').textContent=d.request.client_note?'הערת לקוח: '+d.request.client_note:'';
+   el('detail-message').textContent=keepNote?.text||(d.request.client_note?'הערת לקוח: '+d.request.client_note:'');
+   el('detail-message').classList.toggle('error',Boolean(keepNote?.error));
+   actions.render(el('detail-actions'),d);
    const types=new Map((d.docTypes||[]).map(t=>[t.doc_type_id,t]));
    const lines=summary.requiredSummary(d.items,id=>types.get(id)?.name_he||id,d.request.status);
    el('detail-required').textContent=lines.text;el('detail-required').classList.toggle('mismatch',lines.mismatch);
@@ -110,12 +140,16 @@
      const line=document.createElement('div');line.className='document-file';
      const fileName=file.stored_name||file.original_name||'קובץ';
      const label=document.createElement('span');label.textContent=fileName;line.append(label);
+     if(file.status==='rejected'){label.textContent=fileName+' (נדחה)';label.className='rejected-file';}
      if(file.ingest_status==='ready') {
+      const buttons=document.createElement('span');buttons.className='file-buttons';
       const b=document.createElement('button');b.type='button';b.className='quiet';
       b.textContent='צפייה';b.setAttribute('aria-pressed','false');
       const index=available.push({requestId,uploadId:file.upload_id,name:fileName,mime_type:file.mime_type,button:b})-1;
       b.addEventListener('click',()=>void viewer.select(index,b));
-      line.append(b);
+      buttons.append(b);
+      const reject=actions.fileButton(file,item,h.textContent);if(reject)buttons.append(reject);
+      line.append(buttons);
      } else {
       const pending=document.createElement('span');pending.textContent='העלאה לא הושלמה';line.append(pending);
      }
@@ -127,6 +161,7 @@
     const empty=document.createElement('p');empty.textContent='לא נמצאו מסמכים בתיק זה.';container.append(empty);
    }
    viewer.setFiles(available);
+   if(refreshing)scroll.scrollTop=scrollTop;
   } catch(e) {
    if(ticket!==sequence)return;
    el('detail-message').textContent=e.code==='UNAUTHORIZED'?'ההתחברות פגה. התחברו מחדש.':
@@ -169,6 +204,7 @@
  scrim.addEventListener('click',()=>closeDrawer());
  window.addEventListener('resize',()=>{viewer.syncLayout();syncDrawerMode();});
  document.addEventListener('keydown',e=>{
+  if(actions.handleKey(e))return;
   if(panel.hidden||viewer.isModalOpen())return;
   if(e.key==='Escape'){e.preventDefault();closeDrawer();return;}
   if(e.key==='Tab'&&isNarrow()) {

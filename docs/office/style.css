@@ -67,3 +67,30 @@ footer{font-size:.82rem;text-align:center;color:var(--muted);border-top:1px soli
 .preview-modal button:focus-visible,.client-drawer button:focus-visible{outline:3px solid #6697b2;outline-offset:2px}
 @media(max-width:580px){.preview-modal{padding:0}.preview-modal-pane{height:100dvh;max-height:none;padding:12px}.preview-modal-content .preview-pdf{height:68dvh}.preview-actions button{padding:7px}}
 @media(prefers-reduced-motion:no-preference){.client-drawer{animation:drawer-enter .16s ease-out}@keyframes drawer-enter{from{transform:translateX(10px)}to{transform:translateX(0)}}}
+
+/* Stage 6.3.1: who works now, drawer actions and the action dialog. */
+.top-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.who{display:flex;align-items:center;gap:8px;font-size:.9rem;color:var(--muted)}.who select{min-width:130px;padding:7px 10px}
+.who.needed select{outline:3px solid var(--missing);outline-offset:2px}
+.detail-actions{display:grid;gap:10px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:12px 0;margin-bottom:12px}
+.detail-actions:empty{display:none}
+.action-row{display:flex;flex-wrap:wrap;gap:8px}.action-row .primary{padding:8px 16px}
+.done-line{color:var(--ok);font-weight:700;margin:0}
+.danger{background:transparent;border:1px solid var(--rejected);padding:8px 13px;color:var(--rejected)}
+.link-button{background:none;border:0;color:var(--sea);text-decoration:underline;text-underline-offset:4px;padding:3px;font-weight:700}
+.document-file .file-buttons{display:flex;gap:6px;flex-shrink:0}
+.document-file .rejected-file{color:var(--rejected)}
+.action-dialog{position:fixed;inset:0;z-index:95;background:rgba(30,42,46,.55);display:flex;align-items:center;justify-content:center;padding:18px}
+.action-pane{background:var(--sheet);border:1px solid var(--line);width:min(560px,100%);max-height:94dvh;overflow:auto;padding:20px 22px;display:grid;gap:12px}
+.action-pane h2{margin:0}.action-body{display:grid;gap:12px}
+.action-body label{display:grid;gap:5px;font-size:.92rem;color:var(--muted)}
+.action-body select,.action-body textarea,.action-body input{font:inherit;color:var(--ink);border:1px solid var(--line);background:var(--sheet);padding:8px 10px;width:100%}
+.action-body textarea{resize:vertical}
+.message-preview{background:var(--paper);border-inline-start:3px solid var(--sea);padding:10px 12px;white-space:pre-line;font-size:.94rem;overflow-wrap:anywhere}
+.action-foot{display:flex;flex-wrap:wrap;gap:8px}
+.button-link{display:inline-block;text-decoration:none;border-radius:3px;padding:12px 24px}
+#action-message:empty{display:none}#action-message{margin:0}#action-message.error{color:var(--rejected)}
+.action-pane :focus-visible{outline:3px solid #6697b2;outline-offset:2px}
+@media(max-width:580px){.action-dialog{padding:0}.action-pane{width:100%;height:100dvh;max-height:none}.top-actions{gap:8px}.who span{display:none}}
+.drawer-contents #detail-message.error{color:var(--rejected);border-inline-start-color:var(--rejected)}
+.who-inline{display:flex;align-items:center;gap:10px;font-size:.92rem;color:var(--missing);font-weight:600}.who-inline select{min-width:140px;padding:7px 10px}
