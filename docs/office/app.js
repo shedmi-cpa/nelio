@@ -6,28 +6,30 @@
  if(!c||!lib?.createClient){msg.textContent='רכיב ההתחברות לא נטען. בדקו את החיבור לאינטרנט ורעננו.';msg.classList.add('error');return;}
  const auth=lib.createClient(c.supabaseUrl,c.publishableKey,{auth:{flowType:'pkce',autoRefreshToken:true,detectSessionInUrl:true,persistSession:true}});
  let activeId=null,overview=null,currentRequest=null,sequence=0,returnFocus=null;
- if (!window.NelioDocumentPreview?.create) {
+ if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary) {
   msg.textContent='רכיב תצוגת המסמכים לא נטען. רעננו את הדף.';
   msg.classList.add('error');return;
  }
  const panel=el('client-detail'),scrim=el('drawer-scrim');
- const viewer=window.NelioDocumentPreview.create({officeCall,getCurrentRequest:()=>currentRequest,supabaseUrl:c.supabaseUrl});
  const isNarrow=()=>window.matchMedia('(max-width: 1150px)').matches;
+ const summary=window.NelioRequestSummary;
+ const viewer=window.NelioDocumentPreview.create({officeCall,getCurrentRequest:()=>currentRequest,supabaseUrl:c.supabaseUrl,isNarrow,onChange:()=>syncDrawerMode()});
  function setInert(value) {
   document.querySelector('main').inert=value;
   document.querySelector('header.top').inert=value;
   document.querySelector('footer').inert=value;
  }
  function syncDrawerMode() {
-  if(panel.hidden)return;
+  if(panel.hidden||viewer.isModalOpen())return;
   const narrow=isNarrow();
   scrim.hidden=!narrow;
   panel.setAttribute('role',narrow?'dialog':'region');
   if(narrow)panel.setAttribute('aria-modal','true');
   else panel.removeAttribute('aria-modal');
   document.body.classList.toggle('drawer-modal',narrow);
-  setInert(narrow);
-  if(narrow&&!panel.contains(document.activeElement)&&!viewer.isModalOpen())el('close-detail').focus();
+  // The side pane covers the table, so the covered page must not take keyboard focus.
+  setInert(narrow||viewer.isPaneOpen());
+  if(narrow&&!panel.contains(document.activeElement))el('close-detail').focus();
  }
  function closeDrawer(restore=true) {
   ++sequence;currentRequest=null;viewer.reset();
@@ -39,7 +41,7 @@
  }
  function message(s,error=false){msg.hidden=false;msg.textContent=s;msg.classList.toggle('error',error);}
  function signedOut(s='כדי להיכנס ללוח, התחברו באמצעות חשבון המשרד.'){activeId=null;overview=null;closeDrawer(false);dashboard.hidden=true;login.hidden=false;logout.hidden=true;message(s);}
- const statusName={complete:'הושלם',partial:'הושלם חלקית',not_started:'לא התחיל',submitted:'ממתין לבדיקה'};
+ const statusName={complete:'הושלם',partial:'השלים חלק',not_started:'לא התחיל',submitted:'ממתין לבדיקה'};
  const date=value=>value?new Intl.DateTimeFormat('he-IL',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'Asia/Jerusalem'}).format(new Date(value)):'—';
  function cell(tr,value,cl=''){const td=document.createElement('td');td.textContent=String(value??'—');if(cl)td.className=cl;tr.append(td);}
  function render(d){
@@ -77,6 +79,7 @@
   container.replaceChildren();
   el('detail-title').textContent=name||'תיק לקוח';
   el('detail-meta').textContent='';
+  el('detail-required').textContent='';el('detail-required').classList.remove('mismatch');
   el('detail-message').textContent='טוענים תיק לקוח…';
   panel.hidden=false;
   document.body.classList.add('drawer-open');
@@ -90,13 +93,14 @@
     (d.client.frequency==='bimonthly'?'דיווח דו־חודשי':'דיווח חודשי')+' | '+(statusName[d.request.status]||'');
    el('detail-message').textContent=d.request.client_note?'הערת לקוח: '+d.request.client_note:'';
    const types=new Map((d.docTypes||[]).map(t=>[t.doc_type_id,t]));
+   const lines=summary.requiredSummary(d.items,id=>types.get(id)?.name_he||id,d.request.status);
+   el('detail-required').textContent=lines.text;el('detail-required').classList.toggle('mismatch',lines.mismatch);
    const available=[];
    for(const item of d.items||[]) {
     const part=document.createElement('article');part.className='document-item';
     const h=document.createElement('h3');h.textContent=types.get(item.doc_type_id)?.name_he||item.doc_type_id;part.append(h);
-    const state=document.createElement('p');
-    state.className=item.status==='received'?'received':item.status==='rejected'?'rejected':'missing';
-    state.textContent=({received:'התקבל',missing:'חסר',rejected:'לא קריא',not_applicable:'לא היה החודש'})[item.status]||item.status;
+    const state=document.createElement('p'),label=summary.itemLabel(item);
+    state.className=label.tone;state.textContent=label.text;
     part.append(state);
     if(item.reject_reason||item.na_note) {
      const note=document.createElement('p');note.textContent=item.reject_reason||item.na_note;part.append(note);
@@ -163,7 +167,7 @@
  for(const id of ['client-search','filter-staff','filter-status','filter-frequency'])el(id).addEventListener(id==='client-search'?'input':'change',renderRows);
  el('close-detail').addEventListener('click',()=>closeDrawer());
  scrim.addEventListener('click',()=>closeDrawer());
- window.addEventListener('resize',syncDrawerMode);
+ window.addEventListener('resize',()=>{viewer.syncLayout();syncDrawerMode();});
  document.addEventListener('keydown',e=>{
   if(panel.hidden||viewer.isModalOpen())return;
   if(e.key==='Escape'){e.preventDefault();closeDrawer();return;}

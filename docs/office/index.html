@@ -16,6 +16,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.89.0" defer></script>
 <script src="config.js" defer></script>
 <script src="document-preview.js" defer></script>
+<script src="request-summary.js" defer></script>
 <script src="app.js" defer></script>
 </head>
 <body>
@@ -47,19 +48,21 @@
  <div class="drawer-contents">
   <p id="detail-meta" class="minor"></p>
   <p id="detail-message" role="status" aria-live="polite"></p>
-  <section id="inline-preview" class="inline-preview" aria-label="תצוגה מקדימה של מסמך" hidden>
-   <div class="preview-heading"><h3 id="inline-preview-title">תצוגת מסמך</h3><button id="preview-expand" class="quiet" type="button" disabled>הגדלה</button></div>
-   <div id="inline-preview-content" class="preview-content" role="status" aria-live="polite"></div>
-   <div class="preview-actions">
-    <button id="inline-prev" type="button" class="quiet" aria-label="המסמך הקודם">הקודם</button>
-    <span id="inline-count" class="minor"></span>
-    <button id="inline-next" type="button" class="quiet" aria-label="המסמך הבא">הבא</button>
-    <button id="inline-download" type="button" class="quiet">הורדת קובץ</button>
-   </div>
-  </section>
+  <p id="detail-required" class="minor"></p>
   <div id="detail-items"></div>
  </div>
 </aside>
+<section id="inline-preview" class="side-preview" aria-labelledby="inline-preview-title" hidden>
+ <div class="preview-heading"><div><p class="minor">תצוגת מסמך</p><h2 id="inline-preview-title">תצוגת מסמך</h2></div>
+  <div class="preview-heading-actions"><button id="preview-expand" class="quiet" type="button" disabled>הגדלה</button><button id="inline-close" class="quiet" type="button" aria-label="סגירת תצוגת המסמך">סגירה ×</button></div></div>
+ <div id="inline-preview-content" class="preview-content" role="status" aria-live="polite"></div>
+ <div class="preview-actions">
+  <button id="inline-prev" type="button" class="quiet" aria-label="המסמך הקודם">הקודם</button>
+  <span id="inline-count" class="minor"></span>
+  <button id="inline-next" type="button" class="quiet" aria-label="המסמך הבא">הבא</button>
+  <button id="inline-download" type="button" class="quiet">הורדת קובץ</button>
+ </div>
+</section>
 <div id="preview-modal" class="preview-modal" role="dialog" aria-modal="true" aria-labelledby="preview-title" hidden>
  <div class="preview-modal-pane">
   <div class="preview-modal-heading"><h2 id="preview-title">תצוגת מסמך</h2><button id="preview-close" type="button" class="quiet">סגירה ×</button></div>
