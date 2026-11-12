@@ -1,10 +1,25 @@
-// Office-only read API. This server never trusts browser-provided user details.
+// Office API. This server never trusts browser-provided user details.
+// Reads since 6.1; write actions since 6.3.1, all through the nelio_office_action database routine.
 export const OFFICE_ORIGIN = 'https://shedmi-cpa.github.io';
 export const OFFICE_EMAIL = 'shedmi.cpa@gmail.com';
-export const VERSION = '0.6.2';
-export type OfficeEnv = { url:string; anonKey:string; serviceKey:string; driveCredentials?:string };
+export const VERSION = '0.7.0';
+export type OfficeEnv = { url:string; anonKey:string; serviceKey:string; driveCredentials?:string; linkKey?:string };
 type HttpFetch = (input:RequestInfo|URL, init?:RequestInit)=>Promise<Response>;
-type Action = {action:'session'}|{action:'overview';cycleId?:string}|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string};
+export type WriteAction =
+ {action:'reject';requestId:string;actor:string;uploadId:string;reason:string;dryRun:boolean}|
+ {action:'approve';requestId:string;actor:string}|
+ {action:'completeManual';requestId:string;actor:string;note:string}|
+ {action:'whatsapp';requestId:string;actor:string;dryRun:boolean}|
+ {action:'rotateLink';requestId:string;actor:string};
+type Action = {action:'session'}|{action:'overview';cycleId?:string}|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string}|WriteAction;
+const WRITE_KEYS:Record<WriteAction['action'],string[]>={
+ reject:['action','requestId','actor','uploadId','reason','dryRun'],
+ approve:['action','requestId','actor'],
+ completeManual:['action','requestId','actor','note'],
+ whatsapp:['action','requestId','actor','dryRun'],
+ rotateLink:['action','requestId','actor'],
+};
+const FAILURE_STATUS:Record<string,number>={BAD_ACTOR:400,BAD_REASON:400,BAD_NOTE:400,BAD_REQUEST:400,NOT_FOUND:404,NOT_ALLOWED:409,NOTHING_MISSING:409,TEMPLATE_MISSING:500};
 type User = {id?:string;email?:string;email_confirmed_at?:string|null;app_metadata?:{providers?:string[]};identities?:{provider?:string}[]};
 
 function output(data:unknown,code:number,origin:string|null):Response {
@@ -27,7 +42,28 @@ export function parseAction(v:unknown):Action|null{
  }
  if(x.action==='clientDetail'&&Object.keys(x).every(k=>k==='action'||k==='requestId')&&validId(x.requestId))return {action:'clientDetail',requestId:x.requestId as string};
  if(x.action==='openFile'&&Object.keys(x).every(k=>['action','requestId','uploadId'].includes(k))&&validId(x.requestId)&&validId(x.uploadId))return {action:'openFile',requestId:x.requestId as string,uploadId:x.uploadId as string};
+ if(typeof x.action==='string'&&Object.hasOwn(WRITE_KEYS,x.action))return parseWrite(x);
  return null;
+}
+function parseWrite(x:Record<string,unknown>):WriteAction|null{
+ const name=x.action as WriteAction['action'];
+ if(!Object.keys(x).every(k=>WRITE_KEYS[name].includes(k)))return null;
+ if(!validId(x.requestId)||typeof x.actor!=='string'||!/^S[0-9]{1,3}$/.test(x.actor))return null;
+ if(x.dryRun!==undefined&&typeof x.dryRun!=='boolean')return null;
+ const base={requestId:x.requestId,actor:x.actor};
+ if(name==='reject'){
+  if(!validId(x.uploadId))return null;
+  const reason=cleanText(x.reason,300);if(!reason)return null;
+  return {action:'reject',...base,uploadId:x.uploadId,reason,dryRun:x.dryRun===true};
+ }
+ if(name==='completeManual'){const note=cleanText(x.note,300);return note?{action:'completeManual',...base,note}:null;}
+ if(name==='whatsapp')return {action:'whatsapp',...base,dryRun:x.dryRun===true};
+ return {action:name,...base};
+}
+// Removes control characters and direction marks that could disguise text, and collapses spaces.
+export function cleanText(v:unknown,max:number):string{
+ if(typeof v!=='string')return '';
+ return v.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
 }
 function validId(v:unknown):v is string{return typeof v==='string'&&v.length>0&&v.length<=100&&/^[A-Za-z0-9_-]+$/.test(v);}
 async function smallJson(r:Request):Promise<unknown>{
@@ -57,6 +93,40 @@ function b64url(bytes:Uint8Array):string{
  let raw='';for(const b of bytes)raw+=String.fromCharCode(b);
  return btoa(raw).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
+function fromB64url(v:string):Uint8Array<ArrayBuffer>{
+ const raw=atob(v.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-v.length%4)%4));
+ const out=new Uint8Array(new ArrayBuffer(raw.length));
+ for(let n=0;n<raw.length;n++)out[n]=raw.charCodeAt(n);
+ return out;
+}
+// D47: the personal link token is kept encrypted (AES-256-GCM). The client id is bound in as
+// additional data, so a ciphertext copied to another client does not decrypt.
+async function linkCryptoKey(raw:string):Promise<CryptoKey>{
+ const bytes=fromB64url(raw.trim().replace(/=+$/,''));
+ if(bytes.length!==32)throw Error('NELIO_LINK_KEY must be 32 bytes, base64');
+ return crypto.subtle.importKey('raw',bytes,{name:'AES-GCM'},false,['encrypt','decrypt']);
+}
+export async function encryptToken(token:string,clientId:string,rawKey:string):Promise<string>{
+ const iv=crypto.getRandomValues(new Uint8Array(12));
+ const sealed=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode(clientId)},await linkCryptoKey(rawKey),new TextEncoder().encode(token));
+ return 'v1.'+b64url(iv)+'.'+b64url(new Uint8Array(sealed));
+}
+export async function decryptToken(value:string,clientId:string,rawKey:string):Promise<string|null>{
+ const m=/^v1\.([A-Za-z0-9_-]{16})\.([A-Za-z0-9_-]{40,})$/.exec(value||'');
+ if(!m)return null;
+ try{
+  const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:fromB64url(m[1]),additionalData:new TextEncoder().encode(clientId)},await linkCryptoKey(rawKey),fromB64url(m[2]));
+  return new TextDecoder().decode(plain);
+ }catch{return null;}
+}
+export function newToken():string{return b64url(crypto.getRandomValues(new Uint8Array(32)));}
+async function rpc(name:string,p:Record<string,unknown>,env:OfficeEnv,f:HttpFetch):Promise<Record<string,unknown>>{
+ const r=await f(env.url+'/rest/v1/rpc/'+name,{method:'POST',headers:{...adminHeaders(env.serviceKey),'Content-Type':'application/json'},body:JSON.stringify({p}),signal:AbortSignal.timeout(10000)});
+ if(!r.ok)throw Error('database_unavailable');
+ const value:unknown=await r.json();
+ if(!value||typeof value!=='object'||Array.isArray(value))throw Error('bad data');
+ return value as Record<string,unknown>;
+}
 async function driveToken(raw:string,f:HttpFetch):Promise<string>{
  const account=JSON.parse(raw) as {client_email?:string;private_key?:string;type?:string};
  if(account.type!=='service_account'||!account.client_email||!account.private_key?.includes('BEGIN PRIVATE KEY'))throw Error('invalid service account');
@@ -72,6 +142,32 @@ async function driveToken(raw:string,f:HttpFetch):Promise<string>{
  if(!r.ok)throw Error('drive token failed');
  const data=await r.json() as {access_token?:string};
  if(!data.access_token)throw Error('missing drive token');return data.access_token;
+}
+
+function isWrite(a:Action):a is WriteAction{return Object.hasOwn(WRITE_KEYS,a.action);}
+async function officeWrite(action:WriteAction,env:OfficeEnv,f:HttpFetch,origin:string|null):Promise<Response>{
+ const reqRows=await table('requests','select=request_id,client_id&request_id=eq.'+encodeURIComponent(action.requestId)+'&limit=1',env,f);
+ const req=reqRows[0] as {client_id?:string}|undefined;
+ if(!req||typeof req.client_id!=='string')return output({ok:false,code:'NOT_FOUND'},404,origin);
+ const clientId=req.client_id;
+ const p:Record<string,unknown>={...action};
+ if(action.action==='rotateLink'){
+  if(!env.linkKey)return output({ok:false,code:'LINK_KEY_MISSING'},501,origin);
+  const token=newToken();
+  try{p.newTokenEnc=await encryptToken(token,clientId,env.linkKey);}catch{return output({ok:false,code:'LINK_KEY_INVALID'},500,origin);}
+  p.newToken=token;
+ } else if(env.linkKey&&(action.action==='reject'||action.action==='whatsapp')){
+  const rows=await table('clients','select=token_enc&client_id=eq.'+encodeURIComponent(clientId)+'&limit=1',env,f);
+  const enc=(rows[0] as {token_enc?:string}|undefined)?.token_enc;
+  // The database uses the token only if it still matches the stored hash.
+  if(enc){try{const token=await decryptToken(enc,clientId,env.linkKey);if(token)p.token=token;}catch{/* treated as no stored link */}}
+ }
+ const result=await rpc('nelio_office_action',p,env,f);
+ if(result.ok!==true){
+  const code=typeof result.code==='string'&&Object.hasOwn(FAILURE_STATUS,result.code)?result.code:'UNAVAILABLE';
+  return output({ok:false,code},FAILURE_STATUS[code]??503,origin);
+ }
+ return output(result,200,origin);
 }
 
 export function createOfficeHandler(env:OfficeEnv,f:HttpFetch=fetch){
@@ -96,17 +192,21 @@ export function createOfficeHandler(env:OfficeEnv,f:HttpFetch=fetch){
    if(!user)return output({ok:false,code:'UNAUTHORIZED'},401,origin);
    if(!isAuthorizedOfficeUser(user))return output({ok:false,code:'FORBIDDEN'},403,origin);
    if(action.action==='session')return output({ok:true,office:true,email:OFFICE_EMAIL,version:VERSION},200,origin);
+   if(isWrite(action))return await officeWrite(action,env,f,origin);
    if(action.action==='clientDetail'||action.action==='openFile'){
-    const reqRows=await table('requests','select=request_id,client_id,cycle_id,status,period,client_note&request_id=eq.'+encodeURIComponent(action.requestId)+'&limit=1',env,f);
+    const reqRows=await table('requests','select=request_id,client_id,cycle_id,status,period,client_note,reminder_count,last_reminder_at,completed_at,completed_by,completion_note&request_id=eq.'+encodeURIComponent(action.requestId)+'&limit=1',env,f);
     const req=reqRows[0] as Record<string,unknown>|undefined;
     if(!req)return output({ok:false,code:'NOT_FOUND'},404,origin);
-    const clientRows=await table('clients','select=client_id,business_name,frequency,profile_id,bookkeeper_id&client_id=eq.'+encodeURIComponent(String(req.client_id))+'&limit=1',env,f);
+    const clientRows=await table('clients','select=client_id,business_name,contact_name,phone,frequency,profile_id,bookkeeper_id,token_enc&client_id=eq.'+encodeURIComponent(String(req.client_id))+'&limit=1',env,f);
     if(clientRows.length!==1)return output({ok:false,code:'NOT_FOUND'},404,origin);
     if(action.action==='clientDetail'){
      const items=await table('items','select=item_id,request_id,doc_type_id,required,status,file_count,na_note,reject_reason,updated_at&request_id=eq.'+encodeURIComponent(action.requestId)+'&limit=100',env,f);
      const uploads=await table('uploads','select=upload_id,item_id,request_id,stored_name,original_name,mime_type,size_bytes,uploaded_at,status,storage_provider,ingest_status&request_id=eq.'+encodeURIComponent(action.requestId)+'&order=uploaded_at.desc&limit=250',env,f);
      const docTypes=await table('doc_types','select=doc_type_id,name_he,sort_order&limit=100',env,f);
-     return output({ok:true,request:req,client:clientRows[0],items,uploads,docTypes},200,origin);
+     const templates=await table('templates','select=template_id,body&template_id=in.(REJECTED,WHATSAPP)',env,f);
+     // The ciphertext never leaves the server; the office only learns whether a link is stored.
+     const {token_enc,...client}=clientRows[0] as Record<string,unknown>;
+     return output({ok:true,request:req,client:{...client,hasLink:typeof token_enc==='string'&&token_enc!==''},items,uploads,docTypes,templates,linkKeyConfigured:Boolean(env.linkKey)},200,origin);
     }
     const uploadRows=await table('uploads','select=upload_id,request_id,storage_provider,storage_path,drive_file_id,ingest_status,stored_name,mime_type&upload_id=eq.'+encodeURIComponent(action.uploadId)+'&request_id=eq.'+encodeURIComponent(action.requestId)+'&limit=1',env,f);
     const upload=uploadRows[0] as Record<string,unknown>|undefined;
