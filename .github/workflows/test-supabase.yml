@@ -19,8 +19,8 @@ jobs:
         with:
           node-version: '22'
       - run: deno check supabase/functions/nelio-api/index.ts supabase/functions/nelio-office/index.ts
-      - run: node --experimental-strip-types --test supabase/tests/office_auth.test.mjs
+      - run: node --experimental-strip-types --test supabase/tests/office_auth.test.mjs supabase/tests/office_ui.test.mjs
       - run: deno test supabase/tests/core_test.ts
-      - run: node --check docs/app.js && node --check docs/office/app.js
+      - run: node --check docs/app.js && node --check docs/office/app.js && node --check docs/office/document-preview.js
       - run: node --test supabase/tests/client_config.test.cjs
       - run: python -m py_compile supabase/tools/prepare-import.py supabase/tests/live_api.py
