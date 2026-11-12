@@ -6,6 +6,8 @@ global.window = {};
 const {kindFor, safeName} = await import('../../docs/office/document-preview.js').then(() => global.window.NelioDocumentPreview);
 const previewSource = fs.readFileSync(new URL('../../docs/office/document-preview.js', import.meta.url), 'utf8');
 const htmlSource = fs.readFileSync(new URL('../../docs/office/index.html', import.meta.url), 'utf8');
+await import('../../docs/office/request-summary.js');
+const {itemLabel, requiredSummary} = global.window.NelioRequestSummary;
 
 test('supported file types are explicit and unsupported formats are not embedded', () => {
  assert.equal(kindFor({mime_type:'application/pdf',name:'x'}),'pdf');
@@ -40,6 +42,7 @@ class FakeElement {
  append(...nodes){this.children.push(...nodes);}
  setAttribute(k,v){this.attributes[k]=v;}
  focus(){global.document.activeElement=this;}
+ scrollIntoView(){this.scrolled=(this.scrolled||0)+1;}
  click(){this.listeners.click?.({target:this});}
  remove(){this.isConnected=false;}
  querySelectorAll(){return [];}
@@ -47,7 +50,7 @@ class FakeElement {
 const ids=['inline-preview','preview-modal','inline-preview-content','preview-modal-content',
  'preview-title','inline-preview-title','inline-prev','inline-next','modal-prev','modal-next',
  'inline-count','modal-count','preview-expand','preview-close','preview-download',
- 'inline-download','client-detail'];
+ 'inline-download','inline-close','client-detail'];
 function setupDocument() {
  const elements=new Map(ids.map(id=>[id,new FakeElement()]));
  elements.get('preview-modal').hidden=true;elements.get('inline-preview').hidden=true;
@@ -90,6 +93,8 @@ test('documents are fetched only on selection, with cleanup when changing files 
   assert.equal(main.inert,true,'background disabled while enlarged');
   el('preview-close').click();
   assert.equal(main.inert,false,'background restored after closing enlarged view');
+  assert.equal(el('inline-preview').hidden,false,'leaving the enlarged view returns to the side pane');
+  assert.equal(global.document.activeElement,el('preview-expand'));
   await viewer.select(1);
   assert.equal(el('inline-preview-content').children[0].tagName,'IFRAME');
   assert.deepEqual(revoked,['blob:preview-1']);
@@ -175,4 +180,107 @@ test('signed Supabase URL is fetched privately, rejects a foreign host, and stal
  } finally {
   URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;global.fetch=oldFetch;
  }
+});
+
+function makeViewer(options={}) {
+ const dom=setupDocument();
+ const calls=[],changes=[];
+ const buttons=[new FakeElement('button'),new FakeElement('button'),new FakeElement('button')];
+ const viewer=global.window.NelioDocumentPreview.create({
+  officeCall:async(action,args)=>{calls.push(args.uploadId);return {driveBlob:new Blob(['x'],{type:'image/png'})};},
+  getCurrentRequest:()=>'R_A',supabaseUrl:'https://sample.supabase.co',onChange:()=>changes.push(1),...options
+ });
+ viewer.setFiles(buttons.map((button,i)=>({requestId:'R_A',uploadId:'U'+i,name:'f'+i+'.png',mime_type:'image/png',button})));
+ return {...dom,viewer,calls,changes,buttons};
+}
+async function withObjectUrls(run) {
+ const oldCreate=URL.createObjectURL,oldRevoke=URL.revokeObjectURL;
+ const made=[],revoked=[];
+ URL.createObjectURL=()=>{made.push(1);return 'blob:x-'+made.length;};
+ URL.revokeObjectURL=u=>revoked.push(u);
+ try { await run({made,revoked}); } finally {URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;}
+}
+
+test('the preview pane lives outside the client drawer and has its own close button', () => {
+ const drawer=htmlSource.slice(htmlSource.indexOf('<aside id="client-detail"'),htmlSource.indexOf('</aside>'));
+ assert.doesNotMatch(drawer,/inline-preview/,'preview is not inside the scrolling drawer');
+ assert.match(htmlSource,/<section id="inline-preview" class="side-preview"[^>]*hidden>/);
+ assert.match(htmlSource,/id="inline-close"[^>]*aria-label="סגירת תצוגת המסמך"/);
+ assert.match(htmlSource,/id="preview-expand"/);
+});
+
+test('wide screen: side pane can be closed, releases the file, and follows selections made in the drawer', async () => {
+ await withObjectUrls(async({revoked})=>{
+  const {el,viewer,calls,buttons,main}=makeViewer({isNarrow:()=>false});
+  await viewer.select(2,buttons[2]);
+  assert.equal(viewer.isPaneOpen(),true);
+  assert.equal(viewer.isModalOpen(),false,'no modal on a wide screen');
+  assert.equal(main.inert,false,'the viewer itself never blocks the drawer');
+  assert.equal(buttons[2].attributes['aria-pressed'],'true');
+  await viewer.select(0,buttons[0]);
+  assert.equal(viewer.isPaneOpen(),true,'pane stays open and updates');
+  assert.equal(el('inline-preview-title').textContent,'f0.png');
+  assert.equal(buttons[2].attributes['aria-pressed'],'false');
+  el('inline-next').click();await new Promise(r=>setTimeout(r,0));
+  assert.equal(el('inline-preview-title').textContent,'f1.png');
+  assert.equal(buttons[1].scrolled,1,'the drawer scrolls to the document shown after next/previous');
+  el('inline-close').click();
+  assert.equal(viewer.isPaneOpen(),false);
+  assert.equal(revoked.length,3,'every object URL released');
+  assert.equal(buttons[1].attributes['aria-pressed'],'false');
+  assert.equal(global.document.activeElement,buttons[1],'focus returns to the document row');
+  assert.equal(el('inline-count').textContent,'');
+  assert.deepEqual(calls,['U2','U0','U1']);
+  await viewer.select(1,buttons[1]);
+  assert.equal(viewer.isPaneOpen(),true,'can be reopened after closing');
+ });
+});
+
+test('narrow screen: the preview opens as a modal and closing it closes the preview', async () => {
+ await withObjectUrls(async({revoked})=>{
+  let narrow=true;
+  const {el,viewer,buttons,main}=makeViewer({isNarrow:()=>narrow});
+  main.inert=true; // the narrow drawer is already modal
+  const loading=viewer.select(1,buttons[1]);
+  assert.equal(viewer.isModalOpen(),true,'visible at once, wherever the drawer is scrolled');
+  assert.equal(viewer.isPaneOpen(),false);
+  assert.match(el('preview-modal-content').children[0].textContent,/טוענים/);
+  await loading;
+  assert.equal(el('preview-modal-content').children[0].tagName,'IMG');
+  el('modal-next').click();await new Promise(r=>setTimeout(r,0));
+  assert.equal(el('preview-title').textContent,'f2.png');
+  el('preview-close').click();
+  assert.equal(viewer.isModalOpen(),false);
+  assert.equal(viewer.isPaneOpen(),false);
+  assert.equal(main.inert,true,'drawer modality restored as it was');
+  assert.equal(revoked.length,2);
+  assert.equal(global.document.activeElement,buttons[2]);
+
+  // Crossing the width boundary with a document open moves it between pane and modal.
+  await viewer.select(0,buttons[0]);
+  narrow=false;viewer.syncLayout();
+  assert.equal(viewer.isModalOpen(),true,'an open modal is not pulled away from the user');
+  el('preview-close').click();
+  assert.equal(viewer.isPaneOpen(),true);
+  narrow=true;viewer.syncLayout();
+  assert.equal(viewer.isPaneOpen(),false);
+  assert.equal(viewer.isModalOpen(),true);
+  viewer.reset();
+ });
+});
+
+test('optional "other" document is not shown as missing, and the drawer explains the request status', () => {
+ const name=id=>({BANK_STATEMENT:'דף בנק',CREDIT_CARD:'פירוט אשראי',OTHER:'מסמך אחר'})[id]||id;
+ const other={doc_type_id:'OTHER',required:false,status:'missing'};
+ assert.deepEqual(itemLabel(other),{text:'רשות, לא הועלה',tone:'optional'});
+ assert.equal(itemLabel({doc_type_id:'OTHER',required:false,status:'received'}).text,'התקבל');
+ assert.deepEqual(itemLabel({doc_type_id:'BANK_STATEMENT',required:true,status:'missing'}),{text:'חסר',tone:'missing'});
+ const done=[{doc_type_id:'BANK_STATEMENT',required:true,status:'received'},{doc_type_id:'CREDIT_CARD',required:true,status:'not_applicable'},other];
+ assert.deepEqual(requiredSummary(done,name,'submitted'),{text:'מסמכי חובה: 2 מתוך 2 נסגרו.',mismatch:false});
+ assert.equal(requiredSummary(done,name,'complete').mismatch,false);
+ assert.equal(requiredSummary(done,name,'partial').mismatch,true,'a stored status that contradicts the items is flagged, not hidden');
+ const open=[{doc_type_id:'BANK_STATEMENT',required:true,status:'rejected'},{doc_type_id:'CREDIT_CARD',required:true,status:'missing'},other];
+ assert.deepEqual(requiredSummary(open,name,'partial'),{text:'מסמכי חובה: 0 מתוך 2 נסגרו. עדיין פתוח: דף בנק (לא קריא), פירוט אשראי.',mismatch:false});
+ // Even a wrongly flagged required=true on OTHER must not count.
+ assert.equal(requiredSummary([{doc_type_id:'OTHER',required:true,status:'missing'}],name,'partial').text,'');
 });

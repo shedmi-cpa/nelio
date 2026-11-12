@@ -24,10 +24,11 @@
   INVALID_URL: 'התקבלה כתובת קובץ לא תקינה.',
   HTTP_ERROR: 'לא ניתן לטעון את הקובץ כרגע. נסו שוב.'
  })[code] || 'לא ניתן לפתוח את המסמך. נסו שוב.';
- function create({officeCall, getCurrentRequest, supabaseUrl}) {
+ function create({officeCall, getCurrentRequest, supabaseUrl, isNarrow = () => false, onChange = () => {}}) {
+  // "inline" is the side pane next to the client drawer (wide screens). Narrow screens use the modal only.
   const inline = byId('inline-preview'), modal = byId('preview-modal');
   const inlineBody = byId('inline-preview-content'), modalBody = byId('preview-modal-content');
-  const state = {files: [], index: -1, generation: 0, url: null, blob: null, pending: null, sourceButton: null, restoreFocus: null, inertBefore: null};
+  const state = {files: [], index: -1, generation: 0, url: null, blob: null, pending: null, text: null, inertBefore: null};
   let origin;
   try { origin = new URL(supabaseUrl).origin; } catch { origin = ''; }
   const active = () => state.files[state.index];
@@ -36,7 +37,7 @@
    inlineBody.replaceChildren();
    modalBody.replaceChildren();
    if (state.url) URL.revokeObjectURL(state.url);
-   state.url = null; state.blob = null;
+   state.url = null; state.blob = null; state.text = null;
   }
   function cancel() {
    ++state.generation;
@@ -51,7 +52,7 @@
    for (const id of ['inline-prev', 'modal-prev']) byId(id).disabled = state.index <= 0;
    for (const id of ['inline-next', 'modal-next']) byId(id).disabled = state.index >= state.files.length - 1;
    byId('inline-count').textContent = byId('modal-count').textContent =
-    state.files.length ? (state.index + 1) + ' מתוך ' + state.files.length : '';
+    state.files.length && state.index >= 0 ? (state.index + 1) + ' מתוך ' + state.files.length : '';
    byId('preview-expand').disabled = !state.url;
    for (let i = 0; i < state.files.length; i++) {
     state.files[i].button?.setAttribute('aria-pressed', String(i === state.index));
@@ -68,19 +69,21 @@
    frame.title = 'תצוגת PDF: ' + file.name; frame.className = 'preview-pdf';
    return frame;
   }
+  function textNode() {
+   const p = document.createElement('p'); p.className = state.text.error ? 'preview-error' : 'preview-info';
+   p.textContent = state.text.text; return p;
+  }
   function renderReady() {
    const file = active();
    if (!file || !state.url) return;
+   state.text = null;
    inlineBody.replaceChildren(contentNode(file, state.url));
    if (!modal.hidden) modalBody.replaceChildren(contentNode(file, state.url));
    updateControls();
   }
   function showText(text, error = false) {
-   for (const target of [inlineBody, modalBody]) {
-    target.replaceChildren();
-    const p = document.createElement('p'); p.className = error ? 'preview-error' : 'preview-info';
-    p.textContent = text; target.append(p);
-   }
+   state.text = {text, error};
+   for (const target of [inlineBody, modalBody]) target.replaceChildren(textNode());
    byId('preview-expand').disabled = true;
   }
   function validatedUrl(value) {
@@ -111,12 +114,35 @@
    }
    throw Object.assign(Error('HTTP_ERROR'), {code:'HTTP_ERROR'});
   }
+  function showModal() {
+   if (!modal.hidden) return;
+   const background = [document.querySelector('main'), document.querySelector('header.top'),
+    document.querySelector('footer'), byId('client-detail'), inline];
+   state.inertBefore = background.map(node => [node, node.inert]);
+   modal.hidden = false;
+   for (const [node] of state.inertBefore) node.inert = true;
+   if (state.url) modalBody.replaceChildren(contentNode(active(), state.url));
+   else if (state.text) modalBody.replaceChildren(textNode());
+   byId('preview-close').focus();
+  }
+  function hideModal() {
+   if (modal.hidden) return;
+   modal.hidden = true; modalBody.replaceChildren();
+   for (const [node, wasInert] of state.inertBefore || []) node.inert = wasInert;
+   state.inertBefore = null;
+  }
+  // Wide screens: the pane beside the drawer. Narrow screens: no room beside it, so the modal is the preview.
+  function present() {
+   if (isNarrow()) { inline.hidden = true; showModal(); }
+   else inline.hidden = false;
+  }
   async function select(index, button = null) {
    if (!Number.isInteger(index) || index < 0 || index >= state.files.length) return;
    cancel(); const ticket = state.generation;
-   state.index = index; if (button) state.sourceButton = button;
+   state.index = index;
    const file = active();
-   inline.hidden = false; updateControls();
+   present(); updateControls(); onChange();
+   if (!button) file.button?.scrollIntoView?.({block:'nearest'});
    if (!kindFor(file)) { showText('אין תצוגה מקדימה לסוג קובץ זה. אפשר להוריד אותו.', false); return; }
    showText('טוענים את המסמך…');
    const controller = new AbortController(); state.pending = controller;
@@ -141,23 +167,29 @@
    if (next >= 0 && next < state.files.length) void select(next);
   }
   function openEnlarged() {
-   if (!state.url || modal.hidden === false) return;
-   state.restoreFocus = document.activeElement;
-   const background = [document.querySelector('main'), document.querySelector('header.top'),
-    document.querySelector('footer'), byId('client-detail')];
-   state.inertBefore = background.map(node => [node, node.inert]);
-   modal.hidden = false;
-   for (const [node] of state.inertBefore) node.inert = true;
-   modalBody.replaceChildren(contentNode(active(), state.url));
-   byId('preview-close').focus();
+   if (!state.url || !modal.hidden) return;
+   showModal(); onChange();
   }
-  function closeEnlarged(restore = true) {
+  // Closes the preview entirely and releases the file; the drawer and its scroll position stay as they were.
+  function closePreview(restore = true) {
+   if (state.index < 0 && inline.hidden && modal.hidden) return;
+   const button = active()?.button;
+   hideModal(); cancel(); state.index = -1; inline.hidden = true;
+   updateControls(); onChange();
+   if (restore && button?.isConnected) button.focus();
+  }
+  // Leaving the enlarged view returns to the side pane; on a narrow screen the modal is the whole preview.
+  function closeEnlarged() {
    if (modal.hidden) return;
-   modal.hidden = true; modalBody.replaceChildren();
-   for (const [node, wasInert] of state.inertBefore || []) node.inert = wasInert;
-   state.inertBefore = null;
-   if (restore && state.restoreFocus?.isConnected) state.restoreFocus.focus();
-   state.restoreFocus = null;
+   if (isNarrow() || state.index < 0) { closePreview(); return; }
+   hideModal(); inline.hidden = false; onChange();
+   byId('preview-expand').focus();
+  }
+  // Called when the window crosses the wide/narrow boundary while a document is open.
+  function syncLayout() {
+   if (state.index < 0) return;
+   if (isNarrow()) { inline.hidden = true; if (modal.hidden) { showModal(); onChange(); } }
+   else if (modal.hidden && inline.hidden) { inline.hidden = false; onChange(); }
   }
   async function download() {
    const file = active(); if (!file) return;
@@ -183,9 +215,9 @@
    }
   }
   function reset() {
-   closeEnlarged(false);
-   cancel(); state.files = []; state.index = -1; state.sourceButton = null;
-   inline.hidden = true; updateControls();
+   hideModal();
+   cancel(); state.files = []; state.index = -1;
+   inline.hidden = true; updateControls(); onChange();
   }
   function setFiles(files) { reset(); state.files = files.slice(); updateControls(); }
   function trapFocus(event) {
@@ -200,16 +232,22 @@
   }
   byId('preview-expand').addEventListener('click', openEnlarged);
   byId('preview-close').addEventListener('click', () => closeEnlarged());
+  byId('inline-close').addEventListener('click', () => closePreview());
   for (const id of ['preview-download', 'inline-download']) byId(id).addEventListener('click', () => void download());
   modal.addEventListener('click', e => { if (e.target === modal) closeEnlarged(); });
   document.addEventListener('keydown', e => {
-   if (modal.hidden) return;
+   if (modal.hidden) {
+    // Escape closes the side pane first; a second Escape then closes the client drawer.
+    if (e.key === 'Escape' && !inline.hidden) {e.preventDefault(); e.stopImmediatePropagation(); closePreview();}
+    return;
+   }
    if (e.key === 'Escape') {e.preventDefault(); e.stopImmediatePropagation(); closeEnlarged();}
    else if (e.key === 'Tab') trapFocus(e);
    else if (e.key === 'ArrowLeft' && e.target.tagName !== 'IFRAME') move(1);
    else if (e.key === 'ArrowRight' && e.target.tagName !== 'IFRAME') move(-1);
   }, true);
-  return {select, reset, setFiles, isModalOpen: () => !modal.hidden};
+  return {select, reset, setFiles, closePreview, syncLayout,
+   isModalOpen: () => !modal.hidden, isPaneOpen: () => !inline.hidden};
  }
  window.NelioDocumentPreview = {create, kindFor, safeName};
  if (typeof module !== 'undefined' && module.exports) module.exports = {kindFor, safeName};
