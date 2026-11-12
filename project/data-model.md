@@ -24,6 +24,7 @@
 - **0.7.1 (6.3.2):** `nelio_office_remind` (תזכורת `REMINDER_1` מהלוח), `nelio_office_calls` (רשימת טלפונים, ו־`office_call` ביומן), `nelio_office_upload` (העלאה בשם הלקוח, `uploads.uploaded_by = office:S2`, אירוע `office_upload`). אירוע נוסף: `office_remind`.
 - **0.7.2 (6.3.3):** `nelio_office_log` (יומן ממוזג עם ההודעות) ו־`nelio_office_settings` (תשע ההגדרות של המחזור ושעות השקט, ונוסחי ההודעות). אירועים: `office_settings` (ערך קודם → חדש), `office_template`. אין עמודות חדשות.
 - **0.7.3 (6.3.4):** `nelio_office_files` (רשימת קבצים לייצוא ZIP, D49). אירוע `office_export`. אין עמודות חדשות.
+- **0.8.0 (7.1, בענף, לא פרוס):** פונקציות קריאה בלבד: `nelio_next_allowed`, `nelio_setting`, `nelio_cycle_period`, `nelio_cycle_plan`, `nelio_missing_text`, `nelio_needs_reminder`. אין טבלאות, עמודות או אירועים חדשים. פירוט: `project/stage-7.md`.
 - Uploads כוללת storage_provider (`drive` או `supabase`), storage_path, ו-ingest_status (`pending` או `ready`). רק ready נספר בפריט. מזהי Drive נשמרים לכל הקבצים ההיסטוריים.
 - api_limits היא טבלה תפעולית נוספת להגבלת קצב בקשות.
 - מפתחות זרים ואילוצי ייחוד מונעים קשר שגוי בין קובץ, פריט, בקשה ולקוח. יש לכל היותר מחזור פתוח אחד.
