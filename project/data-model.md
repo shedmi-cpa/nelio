@@ -21,6 +21,7 @@
 - Clients.token הוחלף ב-token_hash (SHA-256); טוקנים קיימים ממשיכים לעבוד. test_link אינו מיובא למסד החדש.
 - **0.7.0 (6.3.1, D47):** `clients.token_enc` שומר את הטוקן מוצפן (AES-GCM, מפתח רק ב־`nelio-office`). ריק עד שהמשרד יוצר קישור חדש. `token_hash` נשאר מקור האימות.
 - **פעולות משרד (6.3.1):** `nelio_office_action` עם `reject`, `approve`, `completeManual`, `whatsapp`, `rotateLink`, לפי המעברים בפרק 3. "לא קריא" מסמן קובץ אחד `uploads.status = rejected` (D48), ו־`file_count` סופר רק קבצים פעילים. אירועי היומן: `office_reject`, `office_approve`, `office_complete_manual`, `office_whatsapp`, `office_new_link`, עם `actor` בצורה `office:S2`.
+- **0.7.1 (6.3.2):** `nelio_office_remind` (תזכורת `REMINDER_1` מהלוח), `nelio_office_calls` (רשימת טלפונים, ו־`office_call` ביומן), `nelio_office_upload` (העלאה בשם הלקוח, `uploads.uploaded_by = office:S2`, אירוע `office_upload`). אירוע נוסף: `office_remind`.
 - Uploads כוללת storage_provider (`drive` או `supabase`), storage_path, ו-ingest_status (`pending` או `ready`). רק ready נספר בפריט. מזהי Drive נשמרים לכל הקבצים ההיסטוריים.
 - api_limits היא טבלה תפעולית נוספת להגבלת קצב בקשות.
 - מפתחות זרים ואילוצי ייחוד מונעים קשר שגוי בין קובץ, פריט, בקשה ולקוח. יש לכל היותר מחזור פתוח אחד.

@@ -6,7 +6,7 @@
  if(!c||!lib?.createClient){msg.textContent='רכיב ההתחברות לא נטען. בדקו את החיבור לאינטרנט ורעננו.';msg.classList.add('error');return;}
  const auth=lib.createClient(c.supabaseUrl,c.publishableKey,{auth:{flowType:'pkce',autoRefreshToken:true,detectSessionInUrl:true,persistSession:true}});
  let activeId=null,overview=null,currentRequest=null,sequence=0,returnFocus=null;
- if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary||!window.NelioOfficeActions?.create) {
+ if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary||!window.NelioOfficeActions?.create||!window.NelioCallList?.create) {
   msg.textContent='רכיב תצוגת המסמכים לא נטען. רעננו את הדף.';
   msg.classList.add('error');return;
  }
@@ -21,7 +21,7 @@
  function staffName(id){return (overview?.staff||[]).find(x=>x.staff_id===id)?.name||'';}
  function detailNote(text,error=false){const n=el('detail-message');n.textContent=text;n.classList.toggle('error',error);}
  const actions=window.NelioOfficeActions.create({
-  officeCall,staffName,
+  officeCall,staffName,publishableKey:c.publishableKey,
   getActor:()=>actorSelect.value,
   staffList:()=>overview?.staff||[],
   setActor:id=>{actorSelect.value=id;actorSelect.dispatchEvent(new Event('change'));detailNote('');},
@@ -32,11 +32,33 @@
   announce:(text,error=false)=>detailNote(text,error),
   onChanged:()=>void afterAction()
  });
+ const calls=window.NelioCallList.create({
+  officeCall,staffName,
+  getActor:()=>actorSelect.value,
+  onActorMissing:()=>{whoLabel.classList.add('needed');actorSelect.focus();},
+  openClient:(id,name,trigger)=>void openClient(id,name,trigger),
+  onCount:n=>{el('call-count').textContent=n===null?'':' ('+n+')';}
+ });
+ const tabs=[el('tab-clients'),el('tab-calls')];
+ function showTab(tab,focus=false){
+  for(const t of tabs){const on=t===tab;t.setAttribute('aria-selected',String(on));t.tabIndex=on?0:-1;el(t.getAttribute('aria-controls')).hidden=!on;}
+  if(focus)tab.focus();
+  if(tab.id==='tab-calls')void calls.load(overview?.cycleId);
+ }
+ for(const t of tabs){
+  t.addEventListener('click',()=>showTab(t));
+  t.addEventListener('keydown',e=>{
+   // RTL: the right arrow moves to the previous tab.
+   const i=tabs.indexOf(t),step=e.key==='ArrowLeft'?1:e.key==='ArrowRight'?-1:0;
+   if(step){e.preventDefault();showTab(tabs[(i+step+tabs.length)%tabs.length],true);}
+  });
+ }
  async function afterAction(){
   const requestId=currentRequest,note=el('detail-message').textContent,isError=el('detail-message').classList.contains('error');
   if(requestId)await openClient(requestId,el('detail-title').textContent,returnFocus,{keepNote:{text:note,error:isError}});
   if(!panel.hidden&&(!document.activeElement||document.activeElement===document.body||!document.activeElement.isConnected))el('detail-title').focus();
   try{const fresh=await officeCall('overview',overview?.cycleId?{cycleId:overview.cycleId}:{});render(fresh,true);}catch{/* the table refreshes on the next load */}
+  void calls.load(overview?.cycleId);
  }
  function setInert(value) {
   document.querySelector('main').inert=value;
@@ -81,6 +103,8 @@
   const chosenActor=actorSelect.value||storedActor();actorSelect.replaceChildren(new Option('בחרו',''));
   for(const [id,name] of staff)actorSelect.add(new Option(name,id));
   actorSelect.value=staff.has(chosenActor)?chosenActor:'';whoLabel.hidden=false;
+  calls.setStaff(d.staff||[],actorSelect.value);
+  if(!keepDrawer)void calls.load(d.cycleId);
   const sf=el('filter-staff'),old=sf.value;sf.replaceChildren(new Option('כולם',''));for(const [id,name] of staff)sf.add(new Option(name,id));sf.value=old;
   renderRows();
  } 
