@@ -218,3 +218,58 @@ test('client detail tells whether a link is stored without sending the ciphertex
  assert.equal(r.status,200);assert.equal(text.includes('SECRETCIPHERTEXT'),false);
  const d=JSON.parse(text);assert.equal(d.client.hasLink,true);assert.equal(d.linkKeyConfigured,false);assert.equal(d.templates.length,1);
 });
+
+// ---- Stage 6.3.2: reminder now, call list, upload on behalf ----
+const hash='a'.repeat(64);
+const startBody={action:'uploadStart',requestId:'R',actor:'S2',itemId:'I_1',fileName:'סריקה.pdf',mimeType:'application/pdf',sizeBytes:1000,fileHash:hash,uploadKey:'office-key-01'};
+test('6.3.2 actions accept exact, typed fields only',()=>{
+ assert.deepEqual(parseAction({action:'callList'}),{action:'callList'});
+ assert.equal(parseAction({action:'callList',cycleId:'x'}),null);
+ assert.deepEqual(parseAction({action:'remindNow',requestId:'R',actor:'S2'}),{action:'remindNow',requestId:'R',actor:'S2',dryRun:false});
+ assert.deepEqual(parseAction({action:'callDone',requestId:'R',actor:'S2'}),{action:'callDone',requestId:'R',actor:'S2',note:''});
+ assert.equal(parseAction(startBody).mimeType,'application/pdf');
+ for(const bad of [{...startBody,mimeType:'text/html'},{...startBody,sizeBytes:11*1048576},{...startBody,sizeBytes:'1000'},{...startBody,fileHash:'xyz'},
+  {...startBody,uploadKey:'short'},{...startBody,storagePath:'C02/2026-10/x'},{action:'uploadFinish',requestId:'R',actor:'S2',itemId:'I_1',uploadId:'../x'}])
+  assert.equal(parseAction(bad),null);
+});
+test('upload start reserves in the database and returns a signed upload URL for that exact path only',async()=>{
+ const path='C07/2026-10/12345678-1234-1234-1234-123456789abc';let seen,signCall;
+ const f=async(url,init)=>{const s=String(url);
+  if(s.includes('/auth/v1/user'))return Response.json(user);
+  if(s.includes('/requests?'))return Response.json([{request_id:'R',client_id:'C07'}]);
+  if(s.includes('/rpc/nelio_office_upload')){seen=JSON.parse(init.body).p;return Response.json({ok:true,uploadId:'U9',storagePath:path,storedName:'x.pdf',ready:false});}
+  if(s.includes('/storage/v1/object/upload/sign/')){signCall={url:s,init};return Response.json({url:'/object/upload/sign/nelio-documents/'+path+'?token=ONE_TIME'});}
+  throw Error('unexpected '+s);};
+ const r=await createOfficeHandler(env,f)(request(startBody));
+ assert.equal(r.status,200);const d=await r.json();
+ assert.equal(seen.action,'reserve');assert.equal(seen.actor,'S2');
+ assert.ok(signCall.url.endsWith('/object/upload/sign/nelio-documents/'+path));assert.equal(signCall.init.headers.apikey,env.serviceKey);
+ assert.equal(d.uploadUrl,env.url+'/storage/v1/object/upload/sign/nelio-documents/'+path+'?token=ONE_TIME');
+ assert.equal(JSON.stringify(d).includes(env.serviceKey),false);
+});
+test('a signed URL for a different path is refused',async()=>{
+ const path='C07/2026-10/12345678-1234-1234-1234-123456789abc';
+ const f=async(url)=>{const s=String(url);
+  if(s.includes('/auth/v1/user'))return Response.json(user);
+  if(s.includes('/requests?'))return Response.json([{request_id:'R',client_id:'C07'}]);
+  if(s.includes('/rpc/'))return Response.json({ok:true,uploadId:'U9',storagePath:path,ready:false});
+  if(s.includes('/upload/sign/'))return Response.json({url:'/object/upload/sign/nelio-documents/C02/other?token=X'});
+  throw Error('unexpected');};
+ assert.equal((await createOfficeHandler(env,f)(request(startBody))).status,503);
+});
+test('reminder now and call list reach their own routines; foreign users reach none',async()=>{
+ const routines=[];
+ const f=async(url,init)=>{const s=String(url);
+  if(s.includes('/auth/v1/user'))return Response.json(user);
+  if(s.includes('/requests?'))return Response.json([{request_id:'R',client_id:'C07'}]);
+  if(s.includes('/rpc/')){routines.push(s.split('/rpc/')[1]+':'+JSON.parse(init.body).p.action);return Response.json({ok:true,rows:[]});}
+  throw Error('unexpected '+s);};
+ const h=createOfficeHandler(env,f);
+ assert.equal((await h(request({action:'remindNow',requestId:'R',actor:'S2',dryRun:true}))).status,200);
+ assert.equal((await h(request({action:'callList'}))).status,200);
+ assert.equal((await h(request({action:'callDone',requestId:'R',actor:'S2',note:'דיברנו'}))).status,200);
+ assert.deepEqual(routines,['nelio_office_remind:remindNow','nelio_office_calls:callList','nelio_office_calls:callDone']);
+ const calls=[],foreign=createOfficeHandler(env,writeStub({authUser:{...user,email:'x@gmail.com'},calls}));
+ for(const b of [{action:'callList'},startBody,{action:'remindNow',requestId:'R',actor:'S2'}])assert.equal((await foreign(request(b))).status,403);
+ assert.equal(calls.some(c=>c.url.includes('/rpc/')||c.url.includes('/storage/')),false);
+});

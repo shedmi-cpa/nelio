@@ -1,4 +1,4 @@
-/* Stage 6.3.1: office actions in the client drawer (D47, D48, D50).
+/* Stages 6.3.1 and 6.3.2: office actions in the client drawer (D47, D48, D50).
  * The server checks the office account and every state change. This file only builds the controls,
  * shows previews and sends one request per action. Nothing here is stored in the browser. */
 (() => {
@@ -6,6 +6,8 @@
  const MONTHS=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
  const REASONS=['התמונה מטושטשת','חסרים עמודים','זה לא המסמך הנכון','החודש לא נכון','הקובץ חתוך'];
  const LINK_PLACEHOLDER='[הקישור האישי]';
+ const UPLOAD_TYPES=['image/jpeg','image/png','image/webp','image/heic','image/heif','application/pdf'];
+ const MAX_UPLOAD=10*1048576;
 
  // Same rule as nelio_period_label: 2026-10 is "אוקטובר 2026", 2026-09_10 is "ספטמבר–אוקטובר 2026".
  function periodLabel(period) {
@@ -44,6 +46,9 @@
   NOTHING_MISSING:'לא חסר ללקוח אף מסמך חובה, ולכן אין תזכורת לשלוח.',
   TEMPLATE_MISSING:'נוסח ההודעה חסר במערכת, ולכן הפעולה לא בוצעה.',
   LINK_KEY_MISSING:'מפתח הקישורים עוד לא הוגדר בשרת, ולכן הקישור לא הוחלף.',
+  BAD_TYPE:'סוג הקובץ לא נתמך.',TOO_BIG:'הקובץ גדול מדי.',QUOTA_EXCEEDED:'בבקשה הזו כבר יש מספר הקבצים המרבי.',
+  UPLOAD_CONFLICT:'ההעלאה התנגשה בהעלאה קודמת. נסו שוב.',UPLOAD_PENDING:'הקובץ עוד לא נשמר. נסו שוב בעוד רגע.',
+  STORAGE:'שמירת הקובץ נכשלה. בדקו את החיבור ונסו שוב.',
   LINK_KEY_INVALID:'מפתח הקישורים בשרת לא תקין, ולכן הקישור לא הוחלף.',
   NOT_FOUND:'הלקוח או הקובץ לא נמצאו. רעננו את התיק.',
   UNAUTHORIZED:'ההתחברות פגה. התחברו מחדש.',FORBIDDEN:'אין הרשאה לפעולה הזו.'
@@ -54,9 +59,29 @@
    .formatToParts(new Date(value)).map(p=>[p.type,p.value]));
   return parts.day+'/'+parts.month+'/'+parts.year+' '+parts.hour+':'+parts.minute;
  }
+ // Same limits as the server: the type list and 10 MiB. HEIC from iPhones has no reliable browser MIME, so the name decides.
+ function uploadType(file) {
+  const t=String(file?.type||'').toLowerCase(),n=String(file?.name||'').toLowerCase();
+  if(UPLOAD_TYPES.includes(t))return t;
+  if(n.endsWith('.heic'))return 'image/heic';
+  if(n.endsWith('.heif'))return 'image/heif';
+  return '';
+ }
+ function uploadProblem(file) {
+  if(!file)return 'בחרו קובץ.';
+  if(!uploadType(file))return 'סוג הקובץ לא נתמך. אפשר להעלות תמונה (JPG, PNG, WebP, HEIC) או PDF.';
+  if(file.size<1)return 'הקובץ ריק.';
+  if(file.size>MAX_UPLOAD)return 'הקובץ גדול מ־10 מגה־בייט. אפשר לסרוק באיכות נמוכה יותר או לפצל.';
+  return '';
+ }
+ async function sha256Hex(buffer) {
+  const digest=await crypto.subtle.digest('SHA-256',buffer);
+  return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+ }
+ function newUploadKey(){return 'office-'+Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>b.toString(16).padStart(2,'0')).join('');}
  function errorText(code){return ERRORS[code]||'הפעולה לא הצליחה. בדקו את החיבור ונסו שוב.';}
 
- function create({officeCall,getActor,setActor,staffList,onActorMissing,onChanged,staffName,announce}) {
+ function create({officeCall,getActor,setActor,staffList,onActorMissing,onChanged,staffName,announce,publishableKey,fetchImpl=(...a)=>fetch(...a)}) {
   const doc=document,el=id=>doc.getElementById(id);
   const dialog=el('action-dialog'),title=el('action-title'),body=el('action-body'),foot=el('action-foot'),note=el('action-message');
   let detail=null,returnFocus=null,busy=false,ticket=0;
@@ -217,6 +242,76 @@
    focusFirst();
   }
 
+  async function remindDialog(trigger) {
+   const actor=actorOrStop();if(!actor)return;
+   const mine=open('שליחת תזכורת עכשיו',trigger);
+   const preview=node('div',{className:'message-preview','aria-live':'polite'},'מכינים את ההודעה…');
+   body.append(preview);foot.append(button('ביטול','quiet',close));focusFirst();
+   try {
+    const r=await officeCall('remindNow',{requestId:detail.request.request_id,actor,dryRun:true});
+    if(mine!==ticket)return;
+    preview.textContent='';
+    preview.append(node('strong',{},r.subject||''),'\n',r.text||'');
+    const to=node('p',{className:'minor'},'אל: ');to.append(node('bdi',{dir:'ltr'},r.toEmail||''));
+    body.append(to);
+    body.append(node('p',{className:'minor'},r.demo?'מצב הדגמה: המייל נרשם ביומן ולא נשלח. השליחה האמיתית תיבנה בשלב 7.':'המייל נכנס לתור ויוצא בזמן המותר הבא.'));
+    if(r.linkMissing)body.append(node('p',{className:'minor'},'ללקוח אין עדיין קישור שמור, ולכן ההודעה מפנה לקישור שבמייל הקודם.'));
+    foot.replaceChildren(button('שליחת התזכורת','primary',()=>void send('remindNow',{dryRun:false},{onDone:x=>announce(x.messageStatus==='simulated'?'התזכורת נרשמה ביומן (הדגמה, לא נשלחה).':'התזכורת נכנסה לתור.')})),
+     button('ביטול','quiet',close));
+    foot.firstChild.focus();
+   } catch(e){if(mine!==ticket)return;preview.textContent='';say(errorText(e.code),true);}
+  }
+
+  function uploadDialog(trigger) {
+   if(!actorOrStop())return;
+   open('העלאה בשם הלקוח',trigger);
+   const types=new Map((detail.docTypes||[]).map(t=>[t.doc_type_id,t.name_he]));
+   const docLabel=node('label',{for:'upload-item'},'לאיזה מסמך');
+   const select=node('select',{id:'upload-item'});
+   for(const item of detail.items||[])select.append(new Option(types.get(item.doc_type_id)||item.doc_type_id,item.item_id));
+   const firstMissing=(detail.items||[]).find(i=>i.required&&['missing','rejected'].includes(i.status));
+   if(firstMissing)select.value=firstMissing.item_id;
+   docLabel.append(select);
+   const fileLabel=node('label',{for:'upload-file'},'הקובץ (תמונה או PDF, עד 10 מגה־בייט)');
+   const input=node('input',{id:'upload-file',type:'file',accept:UPLOAD_TYPES.join(',')+',.heic,.heif'});
+   fileLabel.append(input);
+   input.addEventListener('change',()=>{const problem=uploadProblem(input.files?.[0]);say(problem,Boolean(problem));});
+   body.append(node('p',{},'למקרה שהלקוח שלח מסמך בוואטסאפ או במייל. הקובץ נשמר בתיק כאילו הלקוח העלה אותו, ונרשם ביומן בשם העובד.'),docLabel,fileLabel);
+   const go=button('העלאה','primary',()=>void doUpload(select,input,go));
+   foot.append(go,button('ביטול','quiet',close));
+   focusFirst();
+  }
+  async function doUpload(select,input,go) {
+   const file=input.files?.[0],problem=uploadProblem(file);
+   if(problem){say(problem,true);input.focus();return;}
+   const actor=actorOrStop();if(!actor||busy)return;
+   const mine=ticket;busy=true;for(const b of foot.querySelectorAll('button'))b.disabled=true;
+   const requestId=detail.request.request_id,itemId=select.value;
+   try {
+    say('מכינים את הקובץ…');
+    const bytes=await file.arrayBuffer();
+    const start=await officeCall('uploadStart',{requestId,actor,itemId,fileName:file.name.slice(0,120),mimeType:uploadType(file),sizeBytes:file.size,fileHash:await sha256Hex(bytes),uploadKey:newUploadKey()});
+    if(mine!==ticket)return;
+    if(start.uploadUrl) {
+     say('מעלים את הקובץ…');
+     const put=await fetchImpl(start.uploadUrl,{method:'PUT',headers:{'Content-Type':uploadType(file),'x-upsert':'false',apikey:publishableKey||''},body:new Blob([bytes],{type:uploadType(file)})});
+     if(!put.ok)throw Object.assign(new Error('STORAGE'),{code:'STORAGE'});
+    }
+    let done=null;
+    for(let attempt=0;attempt<3&&!done;attempt++) {
+     try{done=await officeCall('uploadFinish',{requestId,actor,itemId,uploadId:start.uploadId});}
+     catch(e){if(e.code!=='UPLOAD_PENDING'||attempt===2)throw e;await new Promise(r=>setTimeout(r,800));}
+    }
+    if(mine!==ticket)return;
+    announce('הקובץ נשמר בשם הלקוח: '+(done.storedName||start.storedName||'')+(start.duplicateOf?'. שימו לב: קובץ זהה כבר קיים בבקשה הזו.':'.'));
+    close();onChanged();
+   } catch(e) {
+    if(mine===ticket)say(errorText(e.code),true);
+   } finally {
+    busy=false;for(const b of foot.querySelectorAll('button'))b.disabled=false;
+   }
+  }
+
   async function approve(trigger) {
    const actor=actorOrStop();if(!actor||busy)return;
    busy=true;trigger.disabled=true;
@@ -256,8 +351,12 @@
    const row1=node('div',{className:'action-row'});
    if(can.approve)row1.append(button('בדקתי, תקין','primary',e=>void approve(e.currentTarget)));
    if(can.manual)row1.append(button('הושלם ידני…','quiet',e=>manualDialog(e.currentTarget)));
-   if(can.whatsapp)row1.append(button('תזכורת בוואטסאפ','quiet',e=>void whatsappDialog(e.currentTarget)));
    if(row1.children.length)container.append(row1);
+   const reminders=node('div',{className:'action-row'});
+   if(can.whatsapp)reminders.append(button('תזכורת בוואטסאפ','quiet',e=>void whatsappDialog(e.currentTarget)),
+    button('שליחת תזכורת עכשיו','quiet',e=>void remindDialog(e.currentTarget)));
+   reminders.append(button('העלאה בשם הלקוח','quiet',e=>uploadDialog(e.currentTarget)));
+   container.append(reminders);
    const row2=node('div',{className:'action-row'});
    row2.append(button('יצירת קישור חדש…','link-button',e=>linkDialog(e.currentTarget)));
    container.append(row2);
@@ -285,5 +384,5 @@
   }
   return {render,rerender,fileButton,close,handleKey,isOpen:()=>!dialog.hidden,reset(){close();detail=null;lastContainer=null;}};
  }
- window.NelioOfficeActions=Object.freeze({create,dateTime,periodLabel,fillTemplate,composeReason,whatsappUrl,canReject,available,errorText,REASONS});
+ window.NelioOfficeActions=Object.freeze({create,dateTime,uploadType,uploadProblem,sha256Hex,periodLabel,fillTemplate,composeReason,whatsappUrl,canReject,available,errorText,REASONS});
 })();

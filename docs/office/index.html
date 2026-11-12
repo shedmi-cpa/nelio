@@ -18,6 +18,7 @@
 <script src="document-preview.js" defer></script>
 <script src="request-summary.js" defer></script>
 <script src="office-actions.js" defer></script>
+<script src="call-list.js" defer></script>
 <script src="app.js" defer></script>
 </head>
 <body>
@@ -34,10 +35,17 @@
 <article><span>לא התחילו</span><strong id="count-not-started">—</strong></article>
 <article><span>ממתינים לבדיקה</span><strong id="count-pending">—</strong></article>
 </div>
-<section class="sheet" aria-label="לקוחות המחזור"><div class="table-heading"><h2>לקוחות במחזור</h2><span id="table-count" class="minor"></span></div>
+<div class="tabs" role="tablist" aria-label="אזורי הלוח"><button type="button" role="tab" id="tab-clients" aria-selected="true" aria-controls="panel-clients">לקוחות במחזור</button><button type="button" role="tab" id="tab-calls" aria-selected="false" aria-controls="panel-calls" tabindex="-1">טלפונים להיום<span id="call-count" class="tab-count"></span></button></div>
+<section class="sheet" id="panel-clients" role="tabpanel" aria-labelledby="tab-clients"><div class="table-heading"><h2>לקוחות במחזור</h2><span id="table-count" class="minor"></span></div>
 <div class="filters" aria-label="סינון לקוחות"><label>חיפוש לקוח<input id="client-search" type="search" autocomplete="off" placeholder="שם עסק או מזהה"></label><label>מנהל חשבונות<select id="filter-staff"><option value="">כולם</option></select></label><label>מצב<select id="filter-status"><option value="">כל המצבים</option><option value="not_started">לא התחילו</option><option value="partial">השלימו חלק</option><option value="submitted">ממתינים לבדיקה</option><option value="complete">הושלמו</option></select></label><label>דיווח<select id="filter-frequency"><option value="">כל התדירויות</option><option value="monthly">חודשי</option><option value="bimonthly">דו־חודשי</option></select></label></div>
 <div class="table-scroll"><table><thead><tr><th scope="col">בית העסק</th><th scope="col">מנהל החשבונות</th><th scope="col">מצב</th><th scope="col">פעולה אחרונה</th></tr></thead><tbody id="rows"></tbody></table></div>
 <p class="fine">לחצו על שם העסק לפתיחת תיק המסמכים והפעולות. "עובד עכשיו" נרשם ביומן בלבד, ואינו הרשאה.</p>
+</section>
+<section class="sheet" id="panel-calls" role="tabpanel" aria-labelledby="tab-calls" hidden><div class="table-heading"><h2>טלפונים להיום</h2></div>
+<p id="call-note" class="minor" role="status" aria-live="polite"></p>
+<div class="filters"><label>מנהל חשבונות<select id="call-staff"><option value="">כולם</option></select></label></div>
+<div class="table-scroll"><table><thead><tr><th scope="col">בית העסק</th><th scope="col">איש קשר</th><th scope="col">טלפון</th><th scope="col">מה חסר</th><th scope="col">תזכורות</th><th scope="col">שיחה</th></tr></thead><tbody id="call-rows"></tbody></table></div>
+<p class="fine">"טופל" רק רושם ביומן שהתקשרו היום. הוא לא משנה את מצב הלקוח.</p>
 </section></section>
 </main>
 <div id="drawer-scrim" class="drawer-scrim" hidden></div>

@@ -2,7 +2,7 @@
 // Reads since 6.1; write actions since 6.3.1, all through the nelio_office_action database routine.
 export const OFFICE_ORIGIN = 'https://shedmi-cpa.github.io';
 export const OFFICE_EMAIL = 'shedmi.cpa@gmail.com';
-export const VERSION = '0.7.0';
+export const VERSION = '0.7.1';
 export type OfficeEnv = { url:string; anonKey:string; serviceKey:string; driveCredentials?:string; linkKey?:string };
 type HttpFetch = (input:RequestInfo|URL, init?:RequestInit)=>Promise<Response>;
 export type WriteAction =
@@ -10,16 +10,29 @@ export type WriteAction =
  {action:'approve';requestId:string;actor:string}|
  {action:'completeManual';requestId:string;actor:string;note:string}|
  {action:'whatsapp';requestId:string;actor:string;dryRun:boolean}|
- {action:'rotateLink';requestId:string;actor:string};
-type Action = {action:'session'}|{action:'overview';cycleId?:string}|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string}|WriteAction;
+ {action:'rotateLink';requestId:string;actor:string}|
+ {action:'remindNow';requestId:string;actor:string;dryRun:boolean}|
+ {action:'callDone';requestId:string;actor:string;note:string}|
+ {action:'uploadStart';requestId:string;actor:string;itemId:string;fileName:string;mimeType:string;sizeBytes:number;fileHash:string;uploadKey:string}|
+ {action:'uploadFinish';requestId:string;actor:string;itemId:string;uploadId:string};
+type Action = {action:'session'}|{action:'overview';cycleId?:string}|{action:'callList';cycleId?:string}|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string}|WriteAction;
 const WRITE_KEYS:Record<WriteAction['action'],string[]>={
  reject:['action','requestId','actor','uploadId','reason','dryRun'],
  approve:['action','requestId','actor'],
  completeManual:['action','requestId','actor','note'],
  whatsapp:['action','requestId','actor','dryRun'],
  rotateLink:['action','requestId','actor'],
+ remindNow:['action','requestId','actor','dryRun'],
+ callDone:['action','requestId','actor','note'],
+ uploadStart:['action','requestId','actor','itemId','fileName','mimeType','sizeBytes','fileHash','uploadKey'],
+ uploadFinish:['action','requestId','actor','itemId','uploadId'],
 };
-const FAILURE_STATUS:Record<string,number>={BAD_ACTOR:400,BAD_REASON:400,BAD_NOTE:400,BAD_REQUEST:400,NOT_FOUND:404,NOT_ALLOWED:409,NOTHING_MISSING:409,TEMPLATE_MISSING:500};
+// Each write goes to one database routine; the routine checks the actor and every state change.
+const ROUTINE:Record<WriteAction['action'],string>={reject:'nelio_office_action',approve:'nelio_office_action',completeManual:'nelio_office_action',
+ whatsapp:'nelio_office_action',rotateLink:'nelio_office_action',remindNow:'nelio_office_remind',callDone:'nelio_office_calls',
+ uploadStart:'nelio_office_upload',uploadFinish:'nelio_office_upload'};
+const UPLOAD_TYPES=['image/jpeg','image/png','image/webp','image/heic','image/heif','application/pdf'];
+const FAILURE_STATUS:Record<string,number>={BAD_TYPE:400,TOO_BIG:413,UPLOAD_CONFLICT:409,UPLOAD_PENDING:409,QUOTA_EXCEEDED:409,BAD_ACTOR:400,BAD_REASON:400,BAD_NOTE:400,BAD_REQUEST:400,NOT_FOUND:404,NOT_ALLOWED:409,NOTHING_MISSING:409,TEMPLATE_MISSING:500};
 type User = {id?:string;email?:string;email_confirmed_at?:string|null;app_metadata?:{providers?:string[]};identities?:{provider?:string}[]};
 
 function output(data:unknown,code:number,origin:string|null):Response {
@@ -42,6 +55,10 @@ export function parseAction(v:unknown):Action|null{
  }
  if(x.action==='clientDetail'&&Object.keys(x).every(k=>k==='action'||k==='requestId')&&validId(x.requestId))return {action:'clientDetail',requestId:x.requestId as string};
  if(x.action==='openFile'&&Object.keys(x).every(k=>['action','requestId','uploadId'].includes(k))&&validId(x.requestId)&&validId(x.uploadId))return {action:'openFile',requestId:x.requestId as string,uploadId:x.uploadId as string};
+ if(x.action==='callList'&&Object.keys(x).every(k=>k==='action'||k==='cycleId')){
+  if(x.cycleId===undefined)return {action:'callList'};
+  if(typeof x.cycleId==='string'&&/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(x.cycleId))return {action:'callList',cycleId:x.cycleId};
+ }
  if(typeof x.action==='string'&&Object.hasOwn(WRITE_KEYS,x.action))return parseWrite(x);
  return null;
 }
@@ -57,8 +74,22 @@ function parseWrite(x:Record<string,unknown>):WriteAction|null{
   return {action:'reject',...base,uploadId:x.uploadId,reason,dryRun:x.dryRun===true};
  }
  if(name==='completeManual'){const note=cleanText(x.note,300);return note?{action:'completeManual',...base,note}:null;}
+ if(name==='rotateLink'||name==='approve')return {action:name,...base};
  if(name==='whatsapp')return {action:'whatsapp',...base,dryRun:x.dryRun===true};
- return {action:name,...base};
+ if(name==='remindNow')return {action:'remindNow',...base,dryRun:x.dryRun===true};
+ if(name==='callDone'){
+  if(x.note!==undefined&&typeof x.note!=='string')return null;
+  return {action:'callDone',...base,note:cleanText(x.note??'',300)};
+ }
+ if(name==='uploadStart'){
+  if(!validId(x.itemId)||typeof x.mimeType!=='string'||!UPLOAD_TYPES.includes(x.mimeType))return null;
+  if(!Number.isSafeInteger(x.sizeBytes)||(x.sizeBytes as number)<1||(x.sizeBytes as number)>10*1048576)return null;
+  if(typeof x.fileHash!=='string'||!/^[a-f0-9]{64}$/.test(x.fileHash))return null;
+  if(typeof x.uploadKey!=='string'||!/^[A-Za-z0-9_-]{8,64}$/.test(x.uploadKey))return null;
+  return {action:'uploadStart',...base,itemId:x.itemId,fileName:cleanText(x.fileName,120),mimeType:x.mimeType,sizeBytes:x.sizeBytes as number,fileHash:x.fileHash,uploadKey:x.uploadKey};
+ }
+ if(name==='uploadFinish')return validId(x.itemId)&&validId(x.uploadId)?{action:'uploadFinish',...base,itemId:x.itemId,uploadId:x.uploadId}:null;
+ return null;
 }
 // Removes control characters and direction marks that could disguise text, and collapses spaces.
 export function cleanText(v:unknown,max:number):string{
@@ -156,16 +187,29 @@ async function officeWrite(action:WriteAction,env:OfficeEnv,f:HttpFetch,origin:s
   const token=newToken();
   try{p.newTokenEnc=await encryptToken(token,clientId,env.linkKey);}catch{return output({ok:false,code:'LINK_KEY_INVALID'},500,origin);}
   p.newToken=token;
- } else if(env.linkKey&&(action.action==='reject'||action.action==='whatsapp')){
+ } else if(env.linkKey&&(action.action==='reject'||action.action==='whatsapp'||action.action==='remindNow')){
   const rows=await table('clients','select=token_enc&client_id=eq.'+encodeURIComponent(clientId)+'&limit=1',env,f);
   const enc=(rows[0] as {token_enc?:string}|undefined)?.token_enc;
   // The database uses the token only if it still matches the stored hash.
   if(enc){try{const token=await decryptToken(enc,clientId,env.linkKey);if(token)p.token=token;}catch{/* treated as no stored link */}}
  }
- const result=await rpc('nelio_office_action',p,env,f);
+ if(action.action==='callDone')p.action='callDone';
+ if(action.action==='uploadStart')p.action='reserve';
+ if(action.action==='uploadFinish')p.action='finish';
+ const result=await rpc(ROUTINE[action.action],p,env,f);
  if(result.ok!==true){
   const code=typeof result.code==='string'&&Object.hasOwn(FAILURE_STATUS,result.code)?result.code:'UNAVAILABLE';
   return output({ok:false,code},FAILURE_STATUS[code]??503,origin);
+ }
+ if(action.action==='uploadStart'&&result.ready!==true){
+  // The browser sends the bytes straight to private Storage with a signed upload URL for this exact path.
+  const path=String(result.storagePath||'');
+  if(!/^[A-Za-z0-9_-]+\/[0-9]{4}-[0-9]{2}(_[0-9]{2})?\/[0-9a-f-]{36}$/.test(path))throw Error('bad storage path');
+  const signed=await f(env.url+'/storage/v1/object/upload/sign/nelio-documents/'+path.split('/').map(encodeURIComponent).join('/'),{method:'POST',headers:{...adminHeaders(env.serviceKey),'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(8000)});
+  if(!signed.ok)throw Error('storage_unavailable');
+  const body=await signed.json() as {url?:string};
+  if(typeof body.url!=='string'||!body.url.startsWith('/object/upload/sign/nelio-documents/'+path+'?'))throw Error('invalid_signed_url');
+  return output({ok:true,uploadId:result.uploadId,storedName:result.storedName,duplicateOf:result.duplicateOf,uploadUrl:env.url+'/storage/v1'+body.url},200,origin);
  }
  return output(result,200,origin);
 }
@@ -193,6 +237,11 @@ export function createOfficeHandler(env:OfficeEnv,f:HttpFetch=fetch){
    if(!isAuthorizedOfficeUser(user))return output({ok:false,code:'FORBIDDEN'},403,origin);
    if(action.action==='session')return output({ok:true,office:true,email:OFFICE_EMAIL,version:VERSION},200,origin);
    if(isWrite(action))return await officeWrite(action,env,f,origin);
+   if(action.action==='callList'){
+    const result=await rpc('nelio_office_calls',action.cycleId?{action:'callList',cycleId:action.cycleId}:{action:'callList'},env,f);
+    if(result.ok!==true)return output({ok:false,code:result.code==='NOT_FOUND'?'NOT_FOUND':'UNAVAILABLE'},result.code==='NOT_FOUND'?404:503,origin);
+    return output(result,200,origin);
+   }
    if(action.action==='clientDetail'||action.action==='openFile'){
     const reqRows=await table('requests','select=request_id,client_id,cycle_id,status,period,client_note,reminder_count,last_reminder_at,completed_at,completed_by,completion_note&request_id=eq.'+encodeURIComponent(action.requestId)+'&limit=1',env,f);
     const req=reqRows[0] as Record<string,unknown>|undefined;

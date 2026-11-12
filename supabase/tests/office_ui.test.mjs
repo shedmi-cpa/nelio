@@ -321,3 +321,27 @@ test('reminder time uses the Israeli 24-hour format in Asia/Jerusalem', () => {
  assert.equal(officeActions.dateTime('2026-11-09T07:00:00Z'),'09/11/2026 09:00');
  assert.equal(officeActions.dateTime('2026-08-01T21:30:00Z'),'02/08/2026 00:30');
 });
+
+// ---- Stage 6.3.2 ----
+await import('../../docs/office/call-list.js');
+const callList=global.window.NelioCallList;
+test('upload checks match the server: types, HEIC by name, 10 MiB', () => {
+ assert.equal(officeActions.uploadType({type:'application/pdf',name:'a.pdf'}),'application/pdf');
+ assert.equal(officeActions.uploadType({type:'',name:'IMG_1.HEIC'}),'image/heic');
+ assert.equal(officeActions.uploadType({type:'text/html',name:'x.html'}),'');
+ assert.equal(officeActions.uploadProblem({type:'image/jpeg',name:'a.jpg',size:10*1048576}),'');
+ assert.match(officeActions.uploadProblem({type:'image/jpeg',name:'a.jpg',size:10*1048576+1}),/10/);
+ assert.match(officeActions.uploadProblem({type:'application/zip',name:'a.zip',size:5}),/לא נתמך/);
+ assert.match(officeActions.uploadProblem(null),/בחרו/);
+});
+test('file hash is SHA-256 in hex, as the server expects', async () => {
+ assert.equal(await officeActions.sha256Hex(new TextEncoder().encode('abc')),'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+});
+test('call list shows one bookkeeper, uncalled clients first, Israeli formats', () => {
+ const rows=[{businessName:'ב',bookkeeperId:'S2',calledAt:'2026-11-12T08:05:00Z'},{businessName:'א',bookkeeperId:'S3'},{businessName:'ג',bookkeeperId:'S2'}];
+ assert.deepEqual(callList.visibleRows(rows,'S2').map(r=>r.businessName),['ג','ב']);
+ assert.equal(callList.visibleRows(rows,'').length,3);
+ assert.equal(callList.timeOf('2026-11-12T08:05:00Z'),'10:05');
+ assert.equal(callList.dateOf('2026-11-12'),'12/11/2026');
+ assert.match(htmlSource,/role="tablist"/);assert.match(htmlSource,/id="call-rows"/);assert.match(htmlSource,/call-list\.js/);
+});

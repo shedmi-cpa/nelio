@@ -94,3 +94,11 @@ footer{font-size:.82rem;text-align:center;color:var(--muted);border-top:1px soli
 @media(max-width:580px){.action-dialog{padding:0}.action-pane{width:100%;height:100dvh;max-height:none}.top-actions{gap:8px}.who span{display:none}}
 .drawer-contents #detail-message.error{color:var(--rejected);border-inline-start-color:var(--rejected)}
 .who-inline{display:flex;align-items:center;gap:10px;font-size:.92rem;color:var(--missing);font-weight:600}.who-inline select{min-width:140px;padding:7px 10px}
+/* Stage 6.3.2: tabs (underline, no pills) and the call list. */
+.tabs{display:flex;flex-wrap:wrap;gap:4px 28px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.tabs [role=tab]{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:9px 0;color:var(--muted);font-weight:600}
+.tabs [role=tab][aria-selected=true]{color:var(--sea);border-bottom-color:var(--sea)}
+.tabs [role=tab]:focus-visible{outline:3px solid #6697b2;outline-offset:2px}
+.tab-count{color:var(--missing);font-weight:700}
+#call-rows .missing-cell{color:var(--missing)}#call-rows td{vertical-align:top}#call-rows td:first-child{font-weight:700}
+.action-pane{align-content:start}.action-foot button,.action-foot a{align-self:start}
