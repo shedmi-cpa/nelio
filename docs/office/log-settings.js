@@ -9,7 +9,7 @@
  };
  const CYCLE_KEYS=['due_day','reminder1_days_before','reminder2_days_before','last_day_days_before','summary_days_after'];
  const TIME_KEYS=['send_time','quiet_start','quiet_end','friday_cutoff'];
- const MESSAGE_STATUS={simulated:'נרשמה (הדגמה, לא נשלחה)',queued:'בתור לשליחה',sent:'נשלחה',cancelled:'בוטלה',failed:'השליחה נכשלה'};
+ const MESSAGE_STATUS={simulated:'נשלחה (הדגמה)',queued:'בתור לשליחה',sent:'נשלחה',cancelled:'בוטלה',failed:'השליחה נכשלה'};
  const PLACEHOLDERS='[שם איש הקשר], [שם העסק], [חודש], [תאריך היעד], [מה שחסר], [רשימת המסמכים], [סוג המסמך], [סיבה], [קישור], [שם המשרד]';
 
  // Who did it: the client, a staff member (old log: staff:S2, new: office:S2) or the system.

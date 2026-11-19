@@ -165,7 +165,7 @@
     preview.textContent=fillTemplate(template('REJECTED')||'[סוג המסמך]: [סיבה]',{...fields(),'[סוג המסמך]':itemName,'[סיבה]':reason});
    };
    select.addEventListener('change',update);area.addEventListener('input',update);update();
-   const demo=node('p',{className:'minor'},'במצב הדגמה ההודעה נרשמת ביומן ולא נשלחת. אם הבקשה כבר אושרה, האישור מתבטל.');
+   const demo=node('p',{className:'minor'},'אם הבקשה כבר אושרה, האישור מתבטל.');
    body.append(reasonLabel,detailLabel,node('p',{className:'minor'},'ההודעה ללקוח:'),preview,fileLine,demo);
    foot.append(
     button('סימון ושליחת בקשה','primary',()=>{
@@ -225,7 +225,7 @@
    open('יצירת קישור חדש',trigger);
    body.append(
     node('p',{},'הקישור הנוכחי של '+(detail.client.business_name||'הלקוח')+' יפסיק לעבוד מיד, וייווצר קישור חדש.'),
-    node('p',{className:'minor'},'משתמשים בזה כשהקישור הגיע למישהו אחר, או כשאין ללקוח קישור שמור. במצב הדגמה המייל ללקוח נרשם ביומן ולא נשלח.'));
+    node('p',{className:'minor'},'משתמשים בזה כשהקישור הגיע למישהו אחר, או כשאין ללקוח קישור שמור. הקישור החדש יישלח ללקוח במייל.'));
    foot.append(button('יצירת קישור חדש','primary',()=>{
     void send('rotateLink',{},{keepOpen:true,onDone:r=>{
      title.textContent='הקישור החדש';
@@ -255,9 +255,9 @@
     preview.append(node('strong',{},r.subject||''),'\n',r.text||'');
     const to=node('p',{className:'minor'},'אל: ');to.append(node('bdi',{dir:'ltr'},r.toEmail||''));
     body.append(to);
-    body.append(node('p',{className:'minor'},r.demo?'מצב הדגמה: המייל נרשם ביומן ולא נשלח. השליחה האמיתית תיבנה בשלב 7.':'המייל נכנס לתור ויוצא בזמן המותר הבא.'));
+    body.append(node('p',{className:'minor'},r.demo?'המייל יוצא מיד.':'המייל נכנס לתור ויוצא בזמן המותר הבא.'));
     if(r.linkMissing)body.append(node('p',{className:'minor'},'ללקוח אין עדיין קישור שמור, ולכן ההודעה מפנה לקישור שבמייל הקודם.'));
-    foot.replaceChildren(button('שליחת התזכורת','primary',()=>void send('remindNow',{dryRun:false},{onDone:x=>announce(x.messageStatus==='simulated'?'התזכורת נרשמה ביומן (הדגמה, לא נשלחה).':'התזכורת נכנסה לתור.')})),
+    foot.replaceChildren(button('שליחת התזכורת','primary',()=>void send('remindNow',{dryRun:false},{onDone:x=>announce(x.messageStatus==='simulated'?'התזכורת נשלחה (הדגמה).':'התזכורת נכנסה לתור.')})),
      button('ביטול','quiet',close));
     foot.firstChild.focus();
    } catch(e){if(mine!==ticket)return;preview.textContent='';say(errorText(e.code),true);}
