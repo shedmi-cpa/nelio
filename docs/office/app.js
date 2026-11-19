@@ -6,7 +6,7 @@
  if(!c||!lib?.createClient){msg.textContent='רכיב ההתחברות לא נטען. בדקו את החיבור לאינטרנט ורעננו.';msg.classList.add('error');return;}
  const auth=lib.createClient(c.supabaseUrl,c.publishableKey,{auth:{flowType:'pkce',autoRefreshToken:true,detectSessionInUrl:true,persistSession:true}});
  let activeId=null,overview=null,currentRequest=null,sequence=0,returnFocus=null;
- if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary||!window.NelioOfficeActions?.create||!window.NelioCallList?.create||!window.NelioLogSettings?.create||!window.NelioZip) {
+ if (!window.NelioDocumentPreview?.create||!window.NelioRequestSummary||!window.NelioOfficeActions?.create||!window.NelioCallList?.create||!window.NelioLogSettings?.create||!window.NelioZip||!window.NelioDemoPanel?.create) {
   msg.textContent='רכיב תצוגת המסמכים לא נטען. רעננו את הדף.';
   msg.classList.add('error');return;
  }
@@ -44,20 +44,27 @@
   getActor:()=>actorSelect.value,
   onActorMissing:()=>{whoLabel.classList.add('needed');actorSelect.focus();}
  });
- const tabs=[el('tab-clients'),el('tab-calls'),el('tab-log'),el('tab-settings')];
+ const demo=window.NelioDemoPanel.create({
+  officeCall,
+  getActor:()=>actorSelect.value,
+  onActorMissing:()=>{whoLabel.classList.add('needed');actorSelect.focus();},
+  onChanged:()=>void silentRefresh()
+ });
+ const tabs=[el('tab-clients'),el('tab-calls'),el('tab-log'),el('tab-settings'),el('tab-demo')];
  function showTab(tab,focus=false){
   for(const t of tabs){const on=t===tab;t.setAttribute('aria-selected',String(on));t.tabIndex=on?0:-1;el(t.getAttribute('aria-controls')).hidden=!on;}
   if(focus)tab.focus();
   if(tab.id==='tab-calls')void calls.load(overview?.cycleId);
   if(tab.id==='tab-log')void logSettings.loadLog(overview?.cycleId);
   if(tab.id==='tab-settings')void logSettings.loadSettings();
+  if(tab.id==='tab-demo')void demo.load();
  }
  for(const t of tabs){
   t.addEventListener('click',()=>showTab(t));
   t.addEventListener('keydown',e=>{
    // RTL: the right arrow moves to the previous tab.
-   const i=tabs.indexOf(t),step=e.key==='ArrowLeft'?1:e.key==='ArrowRight'?-1:0;
-   if(step){e.preventDefault();showTab(tabs[(i+step+tabs.length)%tabs.length],true);}
+   const shown=tabs.filter(x=>!x.hidden),i=shown.indexOf(t),step=e.key==='ArrowLeft'?1:e.key==='ArrowRight'?-1:0;
+   if(step){e.preventDefault();showTab(shown[(i+step+shown.length)%shown.length],true);}
   });
  }
  async function afterAction(){
@@ -67,6 +74,23 @@
   try{const fresh=await officeCall('overview',overview?.cycleId?{cycleId:overview.cycleId}:{});render(fresh,true);}catch{/* the table refreshes on the next load */}
   void calls.load(overview?.cycleId);
  }
+ // The board refreshes itself (D63): an upload from the client's phone shows here within 20 seconds,
+ // without a click. It waits while a dialog is open, and while the browser tab is hidden.
+ const AUTO_REFRESH_MS=20000;
+ let refreshing=false;
+ async function silentRefresh(){
+  if(refreshing||dashboard.hidden||!overview)return;
+  refreshing=true;
+  try{
+   const fresh=await officeCall('overview',overview.cycleId?{cycleId:overview.cycleId}:{});
+   if(overview&&fresh.cycleId===overview.cycleId&&!dashboard.hidden)render(fresh,true);
+   if(el('tab-calls').getAttribute('aria-selected')==='true')void calls.load(overview?.cycleId);
+   if(el('tab-demo').getAttribute('aria-selected')==='true')void demo.load();
+  }catch{/* the next round tries again */}
+  finally{refreshing=false;}
+ }
+ setInterval(()=>{if(!document.hidden&&el('action-dialog').hidden&&!viewer.isModalOpen())void silentRefresh();},AUTO_REFRESH_MS);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)void silentRefresh();});
  function setInert(value) {
   document.querySelector('main').inert=value;
   document.querySelector('header.top').inert=value;
@@ -217,6 +241,7 @@
    const result=await call('overview',session.access_token,cycleId?{cycleId}:{});
    if(activeId!==session.user.id)return;
    render(result);login.hidden=true;dashboard.hidden=false;logout.hidden=false;msg.hidden=true;
+   void demo.load();
   }catch(e){
    dashboard.hidden=true;
    if(e.code==='FORBIDDEN'){signedOut('החשבון מחובר ל־Google אך אינו מורשה לגשת למשרד.');logout.hidden=false;}

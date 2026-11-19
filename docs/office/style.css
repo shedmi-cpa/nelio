@@ -131,3 +131,20 @@ footer{font-size:.82rem;text-align:center;color:var(--muted);border-top:1px soli
 .action-body .choices input,.action-body .check-line input{width:auto}
 .zip-tree{font-size:.86rem;line-height:1.6;background:var(--paper);border:1px solid var(--line);padding:9px 11px;white-space:pre-line;overflow-wrap:anywhere;max-height:200px;overflow-y:auto}
 .zip-tree:empty{display:none}
+/* Stage 7 for the video: the demo tab (D62, D63). */
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.demo-clock{font-size:1.15rem;margin:0 0 4px}.demo-clock strong{color:var(--sea)}
+.demo-note{margin:10px 0 0;min-height:1.4em}.demo-note.error,#demo-relay.error{color:var(--rejected)}
+.demo-result{margin:8px 0 0;padding-inline-start:20px;font-size:.95rem}
+.demo-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}
+.demo-box{border:1px solid var(--line);padding:14px 16px;display:grid;gap:10px;align-content:start;min-width:0}
+.demo-box.wide{grid-column:1/-1}
+.demo-box h3{font-family:'Frank Ruhl Libre',Georgia,serif;color:var(--sea);margin:0;font-size:1.05rem}
+.demo-box label{display:grid;gap:4px;font-size:.95rem}
+.demo-box input{font:inherit;color:var(--ink);border:1px solid var(--line);background:var(--sheet);padding:8px 10px;min-width:0}
+.demo-box input:focus-visible{outline:3px solid #6697b2;outline-offset:2px}
+.demo-box button{justify-self:start}
+.demo-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.demo-list{margin:0;padding-inline-start:20px;font-size:.95rem}
+.demo-secret{display:grid;gap:8px}
+@media (max-width:900px){.demo-grid{grid-template-columns:1fr}}

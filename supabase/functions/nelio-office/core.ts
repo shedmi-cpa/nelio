@@ -2,7 +2,7 @@
 // Reads since 6.1; write actions since 6.3.1, all through the nelio_office_action database routine.
 export const OFFICE_ORIGIN = 'https://shedmi-cpa.github.io';
 export const OFFICE_EMAIL = 'shedmi.cpa@gmail.com';
-export const VERSION = '0.7.3';
+export const VERSION = '0.9.0';
 export type OfficeEnv = { url:string; anonKey:string; serviceKey:string; driveCredentials?:string; linkKey?:string };
 type HttpFetch = (input:RequestInfo|URL, init?:RequestInit)=>Promise<Response>;
 export type WriteAction =
@@ -20,7 +20,9 @@ export type SettingsAction={action:'logList';cycleId?:string}|{action:'settingsG
  {action:'templateSave';actor:string;templateId:string;subject:string;body:string}|
  {action:'zipFiles';actor:string;scope:'request'|'docType'|'client'|'cycle';requestId?:string;docTypeId?:string;clientId?:string;cycleId?:string;includeRejected:boolean;dryRun:boolean};
 const SETTING_KEYS=['due_day','reminder1_days_before','reminder2_days_before','last_day_days_before','summary_days_after','send_time','quiet_start','quiet_end','friday_cutoff'];
-type Action = {action:'session'}|{action:'overview';cycleId?:string}|{action:'callList';cycleId?:string}|SettingsAction|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string}|WriteAction;
+// Stage 7 for the video (D62, D63): the demo panel and the relay's secret.
+export type DemoAction={action:'demoState'}|{action:'demoJump';actor:string;target:string}|{action:'demoReset';actor:string;confirm:string}|{action:'relaySecret';actor:string};
+type Action = DemoAction|{action:'session'}|{action:'overview';cycleId?:string}|{action:'callList';cycleId?:string}|SettingsAction|{action:'clientDetail';requestId:string}|{action:'openFile';requestId:string;uploadId:string}|WriteAction;
 const WRITE_KEYS:Record<WriteAction['action'],string[]>={
  reject:['action','requestId','actor','uploadId','reason','dryRun'],
  approve:['action','requestId','actor'],
@@ -37,7 +39,7 @@ const ROUTINE:Record<WriteAction['action'],string>={reject:'nelio_office_action'
  whatsapp:'nelio_office_action',rotateLink:'nelio_office_action',remindNow:'nelio_office_remind',callDone:'nelio_office_calls',
  uploadStart:'nelio_office_upload',uploadFinish:'nelio_office_upload'};
 const UPLOAD_TYPES=['image/jpeg','image/png','image/webp','image/heic','image/heif','application/pdf'];
-const FAILURE_STATUS:Record<string,number>={BAD_VALUE:400,BAD_ORDER:400,BAD_QUIET:400,LINK_REQUIRED:400,BAD_TYPE:400,TOO_BIG:413,UPLOAD_CONFLICT:409,UPLOAD_PENDING:409,QUOTA_EXCEEDED:409,BAD_ACTOR:400,BAD_REASON:400,BAD_NOTE:400,BAD_REQUEST:400,NOT_FOUND:404,NOT_ALLOWED:409,NOTHING_MISSING:409,TEMPLATE_MISSING:500};
+const FAILURE_STATUS:Record<string,number>={NOT_DEMO:409,NEED_RESET:409,NOT_FORWARD:409,BAD_CONFIRM:400,NO_SNAPSHOT:409,BAD_VALUE:400,BAD_ORDER:400,BAD_QUIET:400,LINK_REQUIRED:400,BAD_TYPE:400,TOO_BIG:413,UPLOAD_CONFLICT:409,UPLOAD_PENDING:409,QUOTA_EXCEEDED:409,BAD_ACTOR:400,BAD_REASON:400,BAD_NOTE:400,BAD_REQUEST:400,NOT_FOUND:404,NOT_ALLOWED:409,NOTHING_MISSING:409,TEMPLATE_MISSING:500};
 type User = {id?:string;email?:string;email_confirmed_at?:string|null;app_metadata?:{providers?:string[]};identities?:{provider?:string}[]};
 
 function output(data:unknown,code:number,origin:string|null):Response {
@@ -64,6 +66,7 @@ export function parseAction(v:unknown):Action|null{
   if(x.cycleId===undefined)return {action:'callList'};
   if(typeof x.cycleId==='string'&&/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(x.cycleId))return {action:'callList',cycleId:x.cycleId};
  }
+ const demo=parseDemo(x);if(demo)return demo;
  const settings=parseSettings(x);if(settings)return settings;
  if(typeof x.action==='string'&&Object.hasOwn(WRITE_KEYS,x.action))return parseWrite(x);
  return null;
@@ -95,6 +98,18 @@ function parseWrite(x:Record<string,unknown>):WriteAction|null{
   return {action:'uploadStart',...base,itemId:x.itemId,fileName:cleanText(x.fileName,120),mimeType:x.mimeType,sizeBytes:x.sizeBytes as number,fileHash:x.fileHash,uploadKey:x.uploadKey};
  }
  if(name==='uploadFinish')return validId(x.itemId)&&validId(x.uploadId)?{action:'uploadFinish',...base,itemId:x.itemId,uploadId:x.uploadId}:null;
+ return null;
+}
+function parseDemo(x:Record<string,unknown>):DemoAction|null{
+ const keys=Object.keys(x),only=(...k:string[])=>keys.every(n=>k.includes(n));
+ if(x.action==='demoState')return only('action')?{action:'demoState'}:null;
+ if(!['demoJump','demoReset','relaySecret'].includes(String(x.action)))return null;
+ if(typeof x.actor!=='string'||!/^S[0-9]{1,3}$/.test(x.actor))return null;
+ if(x.action==='relaySecret')return only('action','actor')?{action:'relaySecret',actor:x.actor}:null;
+ if(x.action==='demoReset')return only('action','actor','confirm')&&x.confirm==='איפוס'?{action:'demoReset',actor:x.actor,confirm:'איפוס'}:null;
+ // A local Israel time with its offset, as the panel sends it: 2026-11-11T09:00:00+02:00
+ if(x.action==='demoJump'&&only('action','actor','target')&&typeof x.target==='string'&&/^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?([+-][01][0-9]:[0-5][0-9]|Z)$/.test(x.target))
+  return {action:'demoJump',actor:x.actor,target:x.target};
  return null;
 }
 // Removes control characters and direction marks that could disguise text, and collapses spaces.
@@ -198,8 +213,8 @@ export async function decryptToken(value:string,clientId:string,rawKey:string):P
  }catch{return null;}
 }
 export function newToken():string{return b64url(crypto.getRandomValues(new Uint8Array(32)));}
-async function rpc(name:string,p:Record<string,unknown>,env:OfficeEnv,f:HttpFetch):Promise<Record<string,unknown>>{
- const r=await f(env.url+'/rest/v1/rpc/'+name,{method:'POST',headers:{...adminHeaders(env.serviceKey),'Content-Type':'application/json'},body:JSON.stringify({p}),signal:AbortSignal.timeout(10000)});
+async function rpc(name:string,p:Record<string,unknown>,env:OfficeEnv,f:HttpFetch,timeout=10000):Promise<Record<string,unknown>>{
+ const r=await f(env.url+'/rest/v1/rpc/'+name,{method:'POST',headers:{...adminHeaders(env.serviceKey),'Content-Type':'application/json'},body:JSON.stringify({p}),signal:AbortSignal.timeout(timeout)});
  if(!r.ok)throw Error('database_unavailable');
  const value:unknown=await r.json();
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('bad data');
@@ -261,8 +276,116 @@ async function officeWrite(action:WriteAction,env:OfficeEnv,f:HttpFetch,origin:s
  return output(result,200,origin);
 }
 
+export async function sha256Hex(text:string):Promise<string>{
+ const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
+ return Array.from(new Uint8Array(d),b=>b.toString(16).padStart(2,'0')).join('');
+}
+const LINK_FALLBACK='הקישור האישי שקיבלתם מאיתנו במייל';
+const MARK_URL='https://shedmi-cpa.github.io/nelio/brand/mark-circle-email.png';
+function esc(v:string):string{return v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+// The branded email (D38, rules.md): Arial, deep sea on warm paper, the personal link as one plain
+// button, and the signature: the circled ש, a thin line, the office name and its address.
+export function renderEmail(body:string,link:string|null,officeName:string,officeEmail:string):{text:string;html:string}{
+ const text=body.split('[קישור]').join(link??LINK_FALLBACK);
+ const lines=body.replace(/\r\n?/g,'\n').split('\n');
+ while(lines.length&&lines[lines.length-1].trim()==='')lines.pop();
+ if(officeName&&lines.length&&lines[lines.length-1].trim()===officeName.trim())lines.pop();
+ const button=link?'<a href="'+esc(link)+'" style="display:inline-block;background:#1B4558;color:#FFFDF8;text-decoration:none;font-weight:bold;padding:10px 22px;margin:8px 0">העלאת המסמכים</a>':esc(LINK_FALLBACK);
+ const html_lines=lines.map(line=>{
+  const parts=line.split('[קישור]');
+  if(parts.length===1)return esc(line);
+  return parts.map(esc).reduce((acc,part)=>acc+(acc.trim()?'<br>':'')+button+(part.trim()?'<br>'+part:''));
+ });
+ const paragraphs=html_lines.join('<br>').split('<br><br>').filter(x=>x.trim()).map(x=>'<p style="margin:0 0 14px">'+x+'</p>').join('');
+ const html='<div dir="rtl" lang="he" style="background:#F6F1E7;padding:24px 12px">'+
+  '<div style="max-width:560px;margin:0 auto;background:#FFFDF8;border:1px solid #D9D0BF;padding:28px 28px 22px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:#1E2A2E;text-align:right">'+
+  paragraphs+
+  '<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:18px;border-collapse:collapse"><tr>'+
+  '<td style="padding:0 0 0 14px;vertical-align:middle"><img src="'+MARK_URL+'" width="46" height="46" alt="" style="display:block;border:0"></td>'+
+  '<td style="border-right:1px solid #D9D0BF;padding:2px 14px 2px 0;vertical-align:middle;font-family:Arial,Helvetica,sans-serif">'+
+  '<div style="color:#1B4558;font-weight:bold;font-size:15px">'+esc(officeName)+'</div>'+
+  (officeEmail?'<div style="color:#5E584D;font-size:13px">'+esc(officeEmail)+'</div>':'')+
+  '</td></tr></table>'+
+  '<p style="margin:18px 0 0;font-size:12px;color:#5E584D">הודעה ממערכת הדגמה. המשרד והנתונים בדויים.</p>'+
+  '</div></div>';
+ return {text,html};
+}
+type RelayMessage={id:string;clientId:string;templateId:string;to:string;subject:string;body:string;tokenEnc:string;tokenHash:string};
+// The Apps Script relay (D53). It proves itself with the shared secret; the database keeps its hash only.
+// It gets ready-to-send emails, with the personal link written in here (D61), and reports back.
+async function relayHandler(request:Request,env:OfficeEnv,f:HttpFetch):Promise<Response>{
+ const secret=request.headers.get('X-Nelio-Relay')||'';
+ if(!/^[A-Za-z0-9_-]{32,128}$/.test(secret))return output({ok:false,code:'UNAUTHORIZED'},401,null);
+ if(!env.url.startsWith('https://')||!env.serviceKey)return output({ok:false,code:'UNAVAILABLE'},503,null);
+ let body:Record<string,unknown>;
+ try{const v=await smallJson(request);if(!v||typeof v!=='object'||Array.isArray(v))throw Error('bad');body=v as Record<string,unknown>;}
+ catch{return output({ok:false,code:'BAD_REQUEST'},400,null);}
+ const secretHash=await sha256Hex(secret);
+ try{
+  if(body.action==='relayPull'&&Object.keys(body).length===1){
+   const r=await rpc('nelio_relay',{action:'pull',secretHash},env,f);
+   if(r.ok!==true)return output({ok:false,code:r.code==='FORBIDDEN'?'FORBIDDEN':'UNAVAILABLE'},r.code==='FORBIDDEN'?403:503,null);
+   const base=String(r.baseUrl||''),officeName=String(r.officeName||''),officeEmail=String(r.officeEmail||'');
+   const links=new Map<string,string|null>();
+   const out=[];
+   for(const m of (Array.isArray(r.messages)?r.messages:[]) as RelayMessage[]){
+    let link:string|null=null;
+    if(m.body.includes('[קישור]')&&m.clientId&&env.linkKey&&/^https:\/\//.test(base)){
+     if(!links.has(m.clientId)){
+      let token:string|null=null;
+      if(m.tokenEnc){try{const t=await decryptToken(m.tokenEnc,m.clientId,env.linkKey);if(t&&await sha256Hex(t)===m.tokenHash)token=t;}catch{token=null;}}
+      if(!token){
+       // No usable stored link: a new one, so the email always carries a working link.
+       const fresh=newToken();
+       try{
+        const saved=await rpc('nelio_relay',{action:'link',secretHash,clientId:m.clientId,tokenHash:await sha256Hex(fresh),tokenEnc:await encryptToken(fresh,m.clientId,env.linkKey)},env,f);
+        if(saved.ok===true)token=fresh;
+       }catch{token=null;}
+      }
+      links.set(m.clientId,token);
+     }
+     const token=links.get(m.clientId);
+     if(token)link=base+'#t='+token;
+    }
+    const mail=renderEmail(m.body,link,officeName,officeEmail);
+    out.push({id:m.id,to:m.to,subject:m.subject,text:mail.text,html:mail.html});
+   }
+   return output({ok:true,officeName,messages:out},200,null);
+  }
+  if(body.action==='relayReport'&&Object.keys(body).every(k=>k==='action'||k==='results')&&Array.isArray(body.results)&&body.results.length<=50){
+   const results=[];
+   for(const x of body.results as unknown[]){
+    if(!x||typeof x!=='object')return output({ok:false,code:'BAD_REQUEST'},400,null);
+    const v=x as Record<string,unknown>;
+    if(!validId(v.id)||typeof v.ok!=='boolean')return output({ok:false,code:'BAD_REQUEST'},400,null);
+    results.push({id:v.id,ok:v.ok,error:cleanText(v.error??'',200)});
+   }
+   const r=await rpc('nelio_relay',{action:'report',secretHash,results},env,f);
+   if(r.ok!==true)return output({ok:false,code:r.code==='FORBIDDEN'?'FORBIDDEN':'UNAVAILABLE'},r.code==='FORBIDDEN'?403:503,null);
+   return output({ok:true,updated:r.updated},200,null);
+  }
+  return output({ok:false,code:'BAD_REQUEST'},400,null);
+ }catch{return output({ok:false,code:'UNAVAILABLE'},503,null);}
+}
+async function demoCall(action:DemoAction,env:OfficeEnv,f:HttpFetch,origin:string|null):Promise<Response>{
+ let result:Record<string,unknown>;
+ if(action.action==='relaySecret'){
+  // Shown once to the office, then only its hash exists.
+  const secret=newToken();
+  result=await rpc('nelio_relay',{action:'setSecret',actor:action.actor,secretHash:await sha256Hex(secret)},env,f);
+  if(result.ok===true)return output({ok:true,secret},200,origin);
+ } else {
+  const p:Record<string,unknown>=action.action==='demoState'?{action:'state'}:action.action==='demoJump'?{action:'jump',actor:action.actor,target:action.target}:{action:'reset',actor:action.actor,confirm:action.confirm};
+  result=await rpc('nelio_demo',p,env,f,30000);
+  if(result.ok===true)return output(action.action==='demoState'?{...result,linkKeyConfigured:Boolean(env.linkKey),version:VERSION}:result,200,origin);
+ }
+ const code=typeof result.code==='string'&&Object.hasOwn(FAILURE_STATUS,result.code)?result.code:'UNAVAILABLE';
+ return output({ok:false,code},FAILURE_STATUS[code]??503,origin);
+}
+
 export function createOfficeHandler(env:OfficeEnv,f:HttpFetch=fetch){
  return async(request:Request):Promise<Response>=>{
+  if(request.method==='POST'&&request.headers.has('X-Nelio-Relay')&&!request.headers.get('Origin'))return relayHandler(request,env,f);
   const origin=request.headers.get('Origin');
   if(origin&&origin!==OFFICE_ORIGIN)return output({ok:false,code:'FORBIDDEN'},403,origin);
   if(request.method==='OPTIONS'){
@@ -284,6 +407,7 @@ export function createOfficeHandler(env:OfficeEnv,f:HttpFetch=fetch){
    if(!isAuthorizedOfficeUser(user))return output({ok:false,code:'FORBIDDEN'},403,origin);
    if(action.action==='session')return output({ok:true,office:true,email:OFFICE_EMAIL,version:VERSION},200,origin);
    if(isWrite(action))return await officeWrite(action,env,f,origin);
+   if(action.action==='demoState'||action.action==='demoJump'||action.action==='demoReset'||action.action==='relaySecret')return await demoCall(action,env,f,origin);
    if(action.action==='zipFiles'){
     const {action:_name,...p}=action;
     const result=await rpc('nelio_office_files',p,env,f);
