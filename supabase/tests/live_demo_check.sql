@@ -11,7 +11,15 @@ begin
   'staff', (select jsonb_agg(jsonb_build_object('id', staff_id, 'role', role, 'active', active, 'email', email)) from public.staff),
   'c04', (select jsonb_build_object('email', email, 'active', active, 'hasLink', token_enc <> '') from public.clients where client_id = 'C04'),
   'templates', (select jsonb_object_agg(template_id, left(body, 90)) from public.templates where template_id in ('LAST_DAY', 'SUMMARY', 'REJECTED', 'CONFIRMATION')),
-  'queuedNow', (select count(*) from public.messages where status = 'queued')));
+  'queuedNow', (select count(*) from public.messages where status = 'queued'),
+  'relay', jsonb_build_object('dbNow', now(), 'secretSet', exists(select 1 from public.settings where key = 'relay_secret_hash' and value ~ '^[a-f0-9]{64}$'),
+   'secretCreatedAt', (select max(real_at) from public.activity_log where event = 'office_relay_secret'),
+   'lastSeen', (select value from public.settings where key = 'relay_last_seen'),
+   'demoNow', (select value from public.settings where key = 'demo_now'), 'demoNowSetAt', (select value from public.settings where key = 'demo_now_set_at'),
+   'messages', (select jsonb_agg(jsonb_build_object('template', template_id, 'client', client_id, 'staff', staff_id, 'status', status, 'sendAfter', send_after, 'sentAt', sent_at, 'note', note) order by created_at desc)
+    from (select * from public.messages where status in ('queued', 'sent', 'failed') order by created_at desc limit 10) m),
+   'recentLog', (select jsonb_agg(jsonb_build_object('at', at, 'realAt', real_at, 'event', event, 'details', left(details, 120)) order by real_at desc)
+    from (select * from public.activity_log where real_at > now() - interval '3 hours' order by real_at desc limit 15) l))));
  a := public.nelio_demo('{"action":"reset","actor":"S1","confirm":"איפוס"}');
  r := r || jsonb_build_object('reset', a);
  a := public.nelio_demo('{"action":"state"}');
