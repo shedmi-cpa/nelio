@@ -423,3 +423,18 @@ test('a signed URL for another host or path is refused', () => {
  assert.throws(()=>Z.validatedUrl('https://proj.supabase.co/storage/v1/object/public/nelio-documents/x','https://proj.supabase.co'));
  assert.ok(Z.validatedUrl('https://proj.supabase.co/storage/v1/object/sign/nelio-documents/x?token=1','https://proj.supabase.co'));
 });
+
+// Stage 7 for the video (D62, D63): the demo tab and the board's own refresh.
+await import('../../docs/office/demo-panel.js');
+test('demo tab: local Israel time gets the right offset, and the tab is hidden until the server says demo', () => {
+ const {israelTarget,errorText}=global.window.NelioDemoPanel;
+ assert.equal(israelTarget('2026-11-11','09:00'),'2026-11-11T09:00:00+02:00');
+ assert.equal(israelTarget('2027-06-10','09:00'),'2027-06-10T09:00:00+03:00');
+ assert.equal(israelTarget('11/11/2026','09:00'),null);
+ assert.equal(errorText({code:'NOT_FORWARD'}).includes('קדימה'),true);
+ assert.match(htmlSource,/id="tab-demo"[^>]*hidden/);
+ assert.match(htmlSource,/demo-panel\.js/);
+ const appSource=fs.readFileSync(new URL('../../docs/office/app.js', import.meta.url), 'utf8');
+ assert.match(appSource,/AUTO_REFRESH_MS=20000/);
+ assert.match(appSource,/document\.hidden/);
+});

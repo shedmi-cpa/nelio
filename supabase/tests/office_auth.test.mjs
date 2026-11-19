@@ -333,3 +333,90 @@ test('zip file list goes to its routine without the action name, and foreign acc
  assert.equal((await h(request({action:'zipFiles',actor:'S2',scope:'cycle',cycleId:'2026-10',includeRejected:true,dryRun:true}))).status,403);
  assert.equal(calls.some(c=>c.url.includes('/rpc/')),false);
 });
+
+// Stage 7 for the video (D62, D63): the demo panel and the relay.
+import {renderEmail,sha256Hex} from '../functions/nelio-office/core.ts';
+test('demo actions accept exact fields only', () => {
+ assert.deepEqual(parseAction({action:'demoState'}),{action:'demoState'});
+ assert.deepEqual(parseAction({action:'demoJump',actor:'S1',target:'2026-11-11T09:00:00+02:00'}),{action:'demoJump',actor:'S1',target:'2026-11-11T09:00:00+02:00'});
+ assert.deepEqual(parseAction({action:'demoReset',actor:'S1',confirm:'איפוס'}),{action:'demoReset',actor:'S1',confirm:'איפוס'});
+ assert.deepEqual(parseAction({action:'relaySecret',actor:'S2'}),{action:'relaySecret',actor:'S2'});
+ for(const x of [{action:'demoState',x:1},{action:'demoJump',actor:'S1',target:'tomorrow'},{action:'demoJump',actor:'S1',target:'2026-11-11T09:00:00+02:00;drop'},
+  {action:'demoReset',actor:'S1',confirm:'כן'},{action:'demoReset',actor:'S1'},{action:'relaySecret',actor:'admin'},{action:'demoJump',target:'2026-11-11T09:00:00Z'}])
+  assert.equal(parseAction(x),null);
+});
+test('demo actions reach nelio_demo after the office check; the secret is shown once and stored as a hash', async () => {
+ const calls=[];
+ const f=async(url,init)=>{
+  calls.push({url:String(url),body:init?.body?JSON.parse(init.body):null});
+  if(String(url).includes('/auth/v1/user'))return Response.json(user);
+  if(String(url).endsWith('/rpc/nelio_demo'))return Response.json({ok:true,now:'2026-11-11T07:00:00Z',steps:[]});
+  if(String(url).endsWith('/rpc/nelio_relay'))return Response.json({ok:true});
+  throw Error('unexpected');
+ };
+ const handler=createOfficeHandler({...env,linkKey:'x'},f);
+ let r=await handler(request({action:'demoState'}));
+ assert.equal(r.status,200);assert.equal((await r.json()).linkKeyConfigured,true);
+ assert.deepEqual(calls.at(-1).body,{p:{action:'state'}});
+ r=await handler(request({action:'demoJump',actor:'S1',target:'2026-11-11T09:00:00+02:00'}));
+ assert.equal(r.status,200);assert.deepEqual(calls.at(-1).body,{p:{action:'jump',actor:'S1',target:'2026-11-11T09:00:00+02:00'}});
+ r=await handler(request({action:'relaySecret',actor:'S1'}));
+ const data=await r.json();
+ assert.match(data.secret,/^[A-Za-z0-9_-]{43}$/);
+ assert.equal(calls.at(-1).body.p.secretHash,await sha256Hex(data.secret));
+ assert.ok(!JSON.stringify(calls.at(-1).body).includes(data.secret));
+ const foreign=createOfficeHandler(env,stub({...user,email:'other@gmail.com'}));
+ assert.equal((await foreign(request({action:'demoReset',actor:'S1',confirm:'איפוס'}))).status,403);
+});
+test('the email is branded, escaped, and carries the link as one button', () => {
+ const m=renderEmail('שלום <דוד>,\nעוד חסר: דף בנק.\n[קישור]\n\nתודה,\nשדמי ושות\', רואי חשבון','https://shedmi-cpa.github.io/nelio/#t=abc','שדמי ושות\', רואי חשבון','shedmi.cpa@gmail.com');
+ assert.ok(m.text.includes('https://shedmi-cpa.github.io/nelio/#t=abc')&&!m.text.includes('[קישור]'));
+ assert.ok(m.html.includes('dir="rtl"')&&m.html.includes('&lt;דוד&gt;')&&!m.html.includes('<דוד>'));
+ assert.equal(m.html.split('href="https://shedmi-cpa.github.io/nelio/#t=abc"').length,2);
+ assert.ok(m.html.includes('mark-circle-email.png')&&m.html.includes('#1B4558'));
+ const noLink=renderEmail('אפשר להעלות כאן: [קישור]',null,'משרד','');
+ assert.ok(noLink.text.includes('הקישור האישי שקיבלתם מאיתנו במייל')&&!noLink.html.includes('href='));
+});
+test('the relay needs its secret, writes the stored link into the email, and reports back', async () => {
+ const key=btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
+ const token='T'.repeat(43),enc=await encryptToken(token,'C04',key),calls=[];
+ const f=async(url,init)=>{
+  const body=JSON.parse(init.body);calls.push(body.p);
+  if(body.p.secretHash!==await sha256Hex('s'.repeat(40)))return Response.json({ok:false,code:'FORBIDDEN'});
+  if(body.p.action==='pull')return Response.json({ok:true,baseUrl:'https://shedmi-cpa.github.io/nelio/',officeName:'משרד',officeEmail:'',
+   messages:[{id:'m1',clientId:'C04',templateId:'LAST_DAY',to:'shedmi.cpa+c04@gmail.com',subject:'נושא',body:'שלום\n[קישור]',tokenEnc:enc,tokenHash:await sha256Hex(token)}]});
+  if(body.p.action==='report')return Response.json({ok:true,updated:body.p.results.length});
+  throw Error('unexpected');
+ };
+ const handler=createOfficeHandler({...env,linkKey:key},f);
+ const relay=(secret,body)=>handler(new Request('https://example.supabase.co/functions/v1/nelio-office',{method:'POST',headers:{'Content-Type':'application/json','X-Nelio-Relay':secret},body:JSON.stringify(body)}));
+ assert.equal((await relay('short',{action:'relayPull'})).status,401);
+ assert.equal((await relay('w'.repeat(40),{action:'relayPull'})).status,403);
+ const r=await relay('s'.repeat(40),{action:'relayPull'});
+ assert.equal(r.status,200);
+ const data=await r.json();
+ assert.equal(data.messages[0].text,'שלום\nhttps://shedmi-cpa.github.io/nelio/#t='+token);
+ assert.ok(!('tokenEnc' in data.messages[0]));
+ assert.ok(calls.every(p=>!JSON.stringify(p).includes('s'.repeat(40))),'the secret itself never reaches the database');
+ const rep=await relay('s'.repeat(40),{action:'relayReport',results:[{id:'m1',ok:true}]});
+ assert.equal((await rep.json()).updated,1);
+ assert.equal((await relay('s'.repeat(40),{action:'relayReport',results:[{id:'../x',ok:true}]})).status,400);
+});
+test('the relay makes a new link when none is stored', async () => {
+ const key=btoa(String.fromCharCode(...new Uint8Array(32).fill(9))),calls=[];
+ const f=async(url,init)=>{
+  const p=JSON.parse(init.body).p;calls.push(p);
+  if(p.action==='pull')return Response.json({ok:true,baseUrl:'https://shedmi-cpa.github.io/nelio/',officeName:'משרד',officeEmail:'',
+   messages:[{id:'m1',clientId:'C04',templateId:'REJECTED',to:'a@b.c',subject:'x',body:'[קישור]',tokenEnc:'',tokenHash:'0'.repeat(64)},{id:'m2',clientId:'C04',templateId:'LAST_DAY',to:'a@b.c',subject:'y',body:'שוב [קישור]',tokenEnc:'',tokenHash:'0'.repeat(64)}]});
+  if(p.action==='link')return Response.json({ok:true});
+  throw Error('unexpected');
+ };
+ const handler=createOfficeHandler({...env,linkKey:key},f);
+ const r=await handler(new Request('https://x.supabase.co/functions/v1/nelio-office',{method:'POST',headers:{'Content-Type':'application/json','X-Nelio-Relay':'s'.repeat(40)},body:'{"action":"relayPull"}'}));
+ const data=await r.json();
+ const links=calls.filter(p=>p.action==='link');
+ assert.equal(links.length,1,'one new link per client per run');
+ const token=data.messages[0].text.split('#t=')[1];
+ assert.equal(links[0].tokenHash,await sha256Hex(token));
+ assert.ok(data.messages[1].text.endsWith('#t='+token));
+});

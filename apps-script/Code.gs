@@ -6,6 +6,7 @@
  *   Setup.gs     The 13 tabs of data-model.md and their default rows. setup() runs from the editor.
  *   Messages.gs  The templates of the messages, and how a message is written from a template.
  *   Seed.gs      The demo office (D36, D37): seedDemo() runs from the editor.
+ *   Relay.gs     The mail relay (D53): sends the emails that the Supabase server says are due.
  *
  *   doGet()   Health check. Opening the web app address in a browser shows that the server is up.
  *   doPost()  The API of the client page: "hello" checks the link and says which month is open,
@@ -24,7 +25,7 @@
 // ============================================================
 
 const CONFIG = {
-  version: '0.5.0',
+  version: '0.5.1',
   officeEmail: 'shedmi.cpa@gmail.com',   // setup() refuses to run from any other account
   timeZone: 'Asia/Jerusalem',
   clientPageUrl: 'https://shedmi-cpa.github.io/nelio/',

@@ -21,6 +21,7 @@
 <script src="call-list.js" defer></script>
 <script src="zip-export.js" defer></script>
 <script src="log-settings.js" defer></script>
+<script src="demo-panel.js" defer></script>
 <script src="app.js" defer></script>
 </head>
 <body>
@@ -37,7 +38,7 @@
 <article><span>לא התחילו</span><strong id="count-not-started">—</strong></article>
 <article><span>ממתינים לבדיקה</span><strong id="count-pending">—</strong></article>
 </div>
-<div class="tabs" role="tablist" aria-label="אזורי הלוח"><button type="button" role="tab" id="tab-clients" aria-selected="true" aria-controls="panel-clients">לקוחות במחזור</button><button type="button" role="tab" id="tab-calls" aria-selected="false" aria-controls="panel-calls" tabindex="-1">טלפונים להיום<span id="call-count" class="tab-count"></span></button><button type="button" role="tab" id="tab-log" aria-selected="false" aria-controls="panel-log" tabindex="-1">יומן פעולות</button><button type="button" role="tab" id="tab-settings" aria-selected="false" aria-controls="panel-settings" tabindex="-1">הגדרות</button></div>
+<div class="tabs" role="tablist" aria-label="אזורי הלוח"><button type="button" role="tab" id="tab-clients" aria-selected="true" aria-controls="panel-clients">לקוחות במחזור</button><button type="button" role="tab" id="tab-calls" aria-selected="false" aria-controls="panel-calls" tabindex="-1">טלפונים להיום<span id="call-count" class="tab-count"></span></button><button type="button" role="tab" id="tab-log" aria-selected="false" aria-controls="panel-log" tabindex="-1">יומן פעולות</button><button type="button" role="tab" id="tab-settings" aria-selected="false" aria-controls="panel-settings" tabindex="-1">הגדרות</button><button type="button" role="tab" id="tab-demo" aria-selected="false" aria-controls="panel-demo" tabindex="-1" hidden>מצב הדגמה</button></div>
 <section class="sheet" id="panel-clients" role="tabpanel" aria-labelledby="tab-clients"><div class="table-heading"><h2>לקוחות במחזור</h2><div class="heading-actions"><span id="table-count" class="minor"></span><button type="button" id="cycle-zip" class="quiet">הורדת ZIP של המחזור…</button></div></div>
 <div class="filters" aria-label="סינון לקוחות"><label>חיפוש לקוח<input id="client-search" type="search" autocomplete="off" placeholder="שם עסק או מזהה"></label><label>מנהל חשבונות<select id="filter-staff"><option value="">כולם</option></select></label><label>מצב<select id="filter-status"><option value="">כל המצבים</option><option value="not_started">לא התחילו</option><option value="partial">השלימו חלק</option><option value="submitted">ממתינים לבדיקה</option><option value="complete">הושלמו</option></select></label><label>דיווח<select id="filter-frequency"><option value="">כל התדירויות</option><option value="monthly">חודשי</option><option value="bimonthly">דו־חודשי</option></select></label></div>
 <div class="table-scroll"><table><thead><tr><th scope="col">בית העסק</th><th scope="col">מנהל החשבונות</th><th scope="col">מצב</th><th scope="col">פעולה אחרונה</th></tr></thead><tbody id="rows"></tbody></table></div>
@@ -69,6 +70,30 @@
 </fieldset>
 <fieldset class="wide"><legend>חגים</legend><p class="minor">בימים האלה לא נשלחות הודעות.</p><ul id="holiday-list" class="holiday-list"></ul></fieldset>
 </form>
+</section>
+<section class="sheet" id="panel-demo" role="tabpanel" aria-labelledby="tab-demo" hidden><div class="table-heading"><h2>מצב הדגמה</h2></div>
+<p class="demo-clock">השעה במערכת: <strong id="demo-now">—</strong></p>
+<p id="demo-cycle" class="minor"></p>
+<p id="demo-note" class="demo-note" role="status" aria-live="polite"></p>
+<ol id="demo-result" class="demo-result" hidden></ol>
+<div class="demo-grid">
+<section class="demo-box wide" aria-labelledby="demo-plan-title"><h3 id="demo-plan-title">תוכנית המחזור</h3>
+<div class="table-scroll"><table><thead><tr><th scope="col">צעד</th><th scope="col">מתי</th><th scope="col">מצב</th><th scope="col"><span class="visually-hidden">פעולה</span></th></tr></thead><tbody id="demo-plan"></tbody></table></div>
+<p class="fine">"קפיצה" מקדמת את השעון. כל צעד שבדרך יוצא בזמן שלו, רק ללקוחות שעוד חסר להם משהו. אפשר רק קדימה.</p></section>
+<section class="demo-box" aria-labelledby="demo-jump-title"><h3 id="demo-jump-title">קפיצה לזמן אחר</h3>
+<div class="demo-fields"><label>תאריך<input id="demo-date" type="date"></label><label>שעה<input id="demo-time" type="time" value="09:00"></label></div>
+<button type="button" id="demo-jump" class="primary">קפיצה</button></section>
+<section class="demo-box" aria-labelledby="demo-mail-title"><h3 id="demo-mail-title">מיילים אמיתיים</h3>
+<p class="minor">במצב הדגמה מייל אמיתי יוצא רק אל:</p><ul id="demo-real" class="demo-list"></ul>
+<p id="demo-relay" class="minor"></p>
+<button type="button" id="demo-secret" class="quiet">יצירת סוד לשליח המיילים</button>
+<div id="demo-secret-out" class="demo-secret" hidden><label>הסוד (מוצג פעם אחת)<input id="demo-secret-value" type="text" readonly dir="ltr"></label><button type="button" id="demo-secret-copy" class="quiet">העתקה</button>
+<p class="minor">ב־Apps Script: הגדרות הפרויקט, מאפייני סקריפט, הוספה. שם: NELIO_RELAY_SECRET, וערך: הסוד.</p></div></section>
+<section class="demo-box" aria-labelledby="demo-reset-title"><h3 id="demo-reset-title">איפוס</h3>
+<p class="minor">הכול חוזר ליום שני, 9/11/2026, 19:30: מסמכים, הודעות ויומן. קבצים לא נמחקים, ולקוחות, קישורים והגדרות לא משתנים.</p>
+<label class="demo-confirm">כדי לאשר, כתבו "איפוס"<input id="demo-confirm" type="text" autocomplete="off"></label>
+<button type="button" id="demo-reset" class="quiet">אפס את הדמו</button></section>
+</div>
 </section></section>
 </main>
 <div id="drawer-scrim" class="drawer-scrim" hidden></div>

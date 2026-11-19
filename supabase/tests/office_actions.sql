@@ -65,7 +65,7 @@ begin
  assert (select status from public.uploads where upload_id='QA_U1')='rejected','file marked rejected, not deleted';
  assert (select status from public.uploads where upload_id='QA_U2')='active','other file stays active';
  assert (select status||file_count||reject_reason from public.items where item_id='QA_OFF_BANK')='rejected1התמונה מטושטשת','item rejected, count of active files';
- assert (select count(*) from public.messages where request_id='QA_OFF_REQ' and template_id='REJECTED' and status='simulated' and position('#t='||tok in body)>0)=1,'demo message recorded with link';
+ assert (select count(*) from public.messages where request_id='QA_OFF_REQ' and template_id='REJECTED' and status='simulated' and position('#t=' in body)=0 and position('[הקישור האישי]' in body)>0)=1,'demo message recorded without the link (D61)';
  answer:=public.nelio_office_action(base||'{"action":"reject","uploadId":"QA_U1","reason":"שוב"}');
  assert answer->>'code'='NOT_ALLOWED','already rejected file';
 
