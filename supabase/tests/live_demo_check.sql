@@ -16,7 +16,8 @@ begin
  r := r || jsonb_build_object('reset', a);
  a := public.nelio_demo('{"action":"state"}');
  r := r || jsonb_build_object('stateAfterReset', jsonb_build_object('now', a->'now', 'waiting', a->'waiting', 'plan', a->'plan', 'realClients', a->'realClients', 'owners', a->'owners'));
- r := r || jsonb_build_object('countsAfterReset', (select jsonb_object_agg(status, n) from (select status, count(*) n from public.requests where cycle_id = '2026-10' group by status) x));
+ r := r || jsonb_build_object('countsAfterReset', (select jsonb_object_agg(status, n) from (select status, count(*) n from public.requests where cycle_id = '2026-10' group by status) x)
+  || jsonb_build_object('total', (select count(*) from public.requests where cycle_id = '2026-10')));
  r := r || jsonb_build_object('c04Items', (select jsonb_agg(jsonb_build_object('doc', doc_type_id, 'status', status, 'seq', last_seq) order by doc_type_id) from public.items where request_id = '2026-10_C04'));
  a := public.nelio_demo('{"action":"jump","actor":"S1","target":"2026-11-11T09:00:00+02:00"}');
  r := r || jsonb_build_object('jump11', a);
