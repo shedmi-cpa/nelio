@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nelio: מסכי "לפני" לסרטון</title>
+<!-- 7.6 (D62, D63): the "before" screens of takes 1–6. Fictional office and clients, no real brand.
+     Keys: 1 the owner's question, 2 the clients' chat, 3 the downloads folder, 4 the tracking sheet,
+     T typing dots on or off (take 1 on, take 6 off), R replay the scroll. The toolbar hides while recording. -->
+<style>
+:root{--ink:#1E2A2E;--muted:#5E584D;--line:#D9D0BF;--paper:#F6F1E7;--chat:#ECE7DD;--bubble:#FFFFFF;--mine:#DCE7EC;--red:#E8B4AE;--redInk:#7E241C}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#1f2326;font-family:Assistant,Arial,Helvetica,sans-serif;color:var(--ink)}
+.scene{position:fixed;inset:0;display:none;align-items:center;justify-content:center}
+.scene.on{display:flex}
+/* Takes 1, 2, 6: a phone-sized chat in the middle of the frame */
+.phone{width:min(420px,92vw);height:min(860px,94vh);background:var(--chat);display:flex;flex-direction:column;overflow:hidden;border-radius:28px;border:10px solid #0f1112}
+.chat-head{background:#F7F4EE;border-bottom:1px solid var(--line);padding:16px 18px;display:flex;align-items:center;gap:12px}
+.avatar{width:42px;height:42px;border-radius:50%;background:#C9D7DD;display:grid;place-items:center;font-weight:700;color:#24495a}
+.chat-head b{display:block;font-size:17px}.chat-head small{color:var(--muted);font-size:13px}
+.thread{flex:1;overflow:hidden;padding:18px 14px;display:flex;flex-direction:column;gap:10px;justify-content:flex-end}
+.msg{max-width:78%;background:var(--bubble);padding:9px 13px 7px;border-radius:12px;font-size:17px;line-height:1.45;box-shadow:0 1px 0 rgba(0,0,0,.06)}
+.msg.mine{align-self:flex-end;background:var(--mine)}
+.msg.them{align-self:flex-start}
+.msg .who{display:block;font-size:13px;font-weight:700;color:#2e6c86;margin-bottom:2px}
+.msg time{display:block;text-align:left;font-size:11px;color:var(--muted);margin-top:2px}
+.typing{align-self:flex-start;background:var(--bubble);border-radius:12px;padding:12px 16px;display:flex;gap:5px}
+.typing i{width:8px;height:8px;border-radius:50%;background:#8a8f92;animation:dot 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes dot{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+.typing.off{visibility:hidden}
+.compose{background:#F7F4EE;border-top:1px solid var(--line);padding:12px 14px;color:#9a948a;font-size:15px}
+.scroller{display:flex;flex-direction:column;gap:10px}
+.scroll-run{animation:scrollup 9s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes scrollup{from{transform:translateY(55%)}to{transform:translateY(0)}}
+.receipt{width:170px;height:210px;background:#f4f1ea;border-radius:6px;padding:14px 12px;filter:blur(2.6px) brightness(.88);transform:rotate(-4deg);display:grid;gap:7px;align-content:start}
+.receipt span{display:block;height:7px;background:#9d978c;border-radius:2px}
+.receipt span:nth-child(odd){width:70%}.receipt span.total{height:12px;width:45%;background:#6f695f;margin-top:10px}
+/* Take 4: a plain downloads folder */
+.window{width:min(1180px,94vw);height:min(700px,90vh);background:#fff;border:1px solid #b9b3a8;display:flex;flex-direction:column;overflow:hidden}
+.bar{background:#EEEBE5;border-bottom:1px solid #cfc9be;padding:10px 16px;display:flex;align-items:center;gap:14px;font-size:15px}
+.bar .path{flex:1;background:#fff;border:1px solid #cfc9be;padding:6px 12px;color:#444}
+.files{width:100%;border-collapse:collapse;font-size:16px}
+.files th{font-weight:600;color:#555;text-align:right;padding:9px 16px;border-bottom:1px solid #e3ded4;background:#faf9f6}
+.files td{padding:9px 16px;border-bottom:1px solid #f0ece5}
+.files td:first-child{display:flex;align-items:center;gap:10px}
+.ico{width:22px;height:26px;border:1px solid #b4aea3;background:#f3f1ec;position:relative;flex:none}
+.ico.img{background:linear-gradient(160deg,#cfe0e8 55%,#9bb7a3 55%)}
+.ico.pdf::after{content:"PDF";position:absolute;bottom:2px;left:1px;font-size:7px;font-weight:700;color:#9b2c22}
+.files tr.pick td{background:#dbe8f0}
+.ltr{direction:ltr;unicode-bidi:isolate}
+/* Take 5: a tracking sheet with red cells */
+.grid{border-collapse:collapse;font-size:15px;width:100%}
+.grid th,.grid td{border:1px solid #d6d2ca;padding:7px 10px;white-space:nowrap}
+.grid thead th{background:#f1efea;font-weight:600}
+.grid td.rowno,.grid th.rowno{background:#f1efea;color:#777;text-align:center;width:38px}
+.grid td.miss{background:var(--red);color:var(--redInk);font-weight:700}
+.grid td.ask{background:#F3D9A4;color:#6a4a0e}
+.grid td.ok{color:#2D6A3E}
+.sheet-wrap{flex:1;overflow:hidden}
+.tabs{border-top:1px solid #cfc9be;background:#EEEBE5;padding:6px 14px;font-size:13px;display:flex;gap:16px;color:#555}
+.tabs b{background:#fff;padding:2px 10px;border:1px solid #cfc9be;border-top:0}
+/* The toolbar for whoever records; hidden until the mouse comes near the bottom */
+.tools{position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;justify-content:center;padding:10px;opacity:0;transition:opacity .2s}
+.tools:hover,.tools:focus-within{opacity:1}
+.tools button{font:inherit;padding:6px 12px;border:1px solid #888;background:#fff;cursor:pointer}
+</style>
+</head>
+<body>
+
+<!-- Takes 1 and 6: the owner asks; the dots come and go -->
+<section class="scene on" id="s1" aria-label="השאלה של בעל המשרד">
+ <div class="phone">
+  <div class="chat-head"><div class="avatar">ע</div><div><b>עמית</b><small>מקליד…</small></div></div>
+  <div class="thread">
+   <div class="msg mine">שלחתי לכולם תזכורת שוב<time>09:12</time></div>
+   <div class="msg them">איפה אנחנו עם המסמכים של אוקטובר?<time>09:41</time></div>
+   <div class="typing" id="dots"><i></i><i></i><i></i></div>
+  </div>
+  <div class="compose">הודעה</div>
+ </div>
+</section>
+
+<!-- Take 2: the clients' messages scroll by -->
+<section class="scene" id="s2" aria-label="הודעות מלקוחות">
+ <div class="phone">
+  <div class="chat-head"><div class="avatar">ל</div><div><b>לקוחות המשרד</b><small>60 משתתפים</small></div></div>
+  <div class="thread"><div class="scroller" id="scroller">
+   <div class="msg them"><span class="who">חיים, ציוד ובניין</span>שלחתי אתמול, לא קיבלתם?<time>08:02</time></div>
+   <div class="msg them"><span class="who">ליאור</span>איזה דף בנק צריך? של העסק או הפרטי?<time>08:15</time></div>
+   <div class="msg them"><span class="who">גיל, סופר הכל פה</span>מצרף<div class="receipt" aria-label="קבלה מטושטשת"><span></span><span></span><span></span><span></span><span></span><span></span><span class="total"></span></div><time>08:31</time></div>
+   <div class="msg them"><span class="who">דוד, מחשב עד הבית</span>מה עוד חסר לכם ממני?<time>08:47</time></div>
+   <div class="msg them"><span class="who">יוסי, על הדרך</span>שלחתי במייל לפני שבוע<time>09:03</time></div>
+   <div class="msg them"><span class="who">אורנה, מאפיית השקד</span>את החשבוניות של ספטמבר או של אוקטובר?<time>09:20</time></div>
+   <div class="msg them"><span class="who">חיים, ציוד ובניין</span>?<time>09:38</time></div>
+  </div></div>
+  <div class="compose">הודעה</div>
+ </div>
+</section>
+
+<!-- Take 4: whatever arrived, with camera names -->
+<section class="scene" id="s3" aria-label="תיקיית הורדות">
+ <div class="window">
+  <div class="bar"><span>‹ ›</span><div class="path">הורדות</div><span>חיפוש</span></div>
+  <table class="files">
+   <thead><tr><th>שם</th><th>תאריך שינוי</th><th>סוג</th><th>גודל</th></tr></thead>
+   <tbody>
+    <tr class="pick"><td><span class="ico img"></span><span class="ltr">IMG_4471.jpg</span></td><td>03/11/2026 21:44</td><td>תמונה</td><td>3.1 MB</td></tr>
+    <tr><td><span class="ico img"></span><span class="ltr">IMG_4472.jpg</span></td><td>03/11/2026 21:44</td><td>תמונה</td><td>2.9 MB</td></tr>
+    <tr><td><span class="ico pdf"></span><span class="ltr">scan0001.pdf</span></td><td>04/11/2026 08:02</td><td>PDF</td><td>812 KB</td></tr>
+    <tr><td><span class="ico pdf"></span><span>דף בנק (1).pdf</span></td><td>04/11/2026 10:17</td><td>PDF</td><td>264 KB</td></tr>
+    <tr><td><span class="ico pdf"></span><span>דף בנק (2).pdf</span></td><td>05/11/2026 13:40</td><td>PDF</td><td>271 KB</td></tr>
+    <tr><td><span class="ico img"></span><span class="ltr">IMG-20261105-0093.jpg</span></td><td>05/11/2026 19:05</td><td>תמונה</td><td>1.4 MB</td></tr>
+    <tr><td><span class="ico img"></span><span>קבלה.jpeg</span></td><td>06/11/2026 07:58</td><td>תמונה</td><td>988 KB</td></tr>
+    <tr><td><span class="ico pdf"></span><span class="ltr">document(3).pdf</span></td><td>06/11/2026 11:26</td><td>PDF</td><td>1.2 MB</td></tr>
+    <tr><td><span class="ico img"></span><span class="ltr">IMG_4519.HEIC</span></td><td>07/11/2026 22:31</td><td>תמונה</td><td>2.2 MB</td></tr>
+    <tr><td><span class="ico pdf"></span><span>חשבוניות אוקטובר סופי.pdf</span></td><td>08/11/2026 09:12</td><td>PDF</td><td>640 KB</td></tr>
+    <tr><td><span class="ico pdf"></span><span>חשבוניות אוקטובר סופי (1).pdf</span></td><td>08/11/2026 09:13</td><td>PDF</td><td>640 KB</td></tr>
+    <tr><td><span class="ico img"></span><span class="ltr">IMG_4533.jpg</span></td><td>09/11/2026 18:20</td><td>תמונה</td><td>3.4 MB</td></tr>
+   </tbody>
+  </table>
+ </div>
+</section>
+
+<!-- Take 5: the manual tracking sheet -->
+<section class="scene" id="s4" aria-label="טבלת מעקב">
+ <div class="window">
+  <div class="bar"><div class="path">מעקב מסמכים אוקטובר 2026 (3).xlsx</div></div>
+  <div class="sheet-wrap"><table class="grid" id="grid"></table></div>
+  <div class="tabs"><b>אוקטובר</b><span>ספטמבר</span><span>אוגוסט</span><span>לקוחות</span></div>
+ </div>
+</section>
+
+<div class="tools" aria-label="כלי צילום">
+ <button type="button" data-s="1">1 השאלה</button><button type="button" data-s="2">2 לקוחות</button><button type="button" data-s="3">3 הורדות</button><button type="button" data-s="4">4 טבלה</button>
+ <button type="button" id="t-dots">T נקודות</button><button type="button" id="t-replay">R שוב</button>
+</div>
+
+<script>
+(() => {
+ 'use strict';
+ // The tracking sheet: fictional clients of the demo office, cells as an office keeps them by hand.
+ const rows=[
+  ['ליאור אימון אישי','✓','✓','חסר','✓','מחכה לדף בנק'],
+  ['ציוד ובניין הדקל','✓','?','✓','חסר','אמר ששלח'],
+  ['מספרת אבי','✓','✓','✓','✓',''],
+  ['מחשב עד הבית','חסר','חסר','חסר','✓','ספטמבר: 4 ימים באיחור'],
+  ['ירוק עד – גינון','✓','✓','✓','?',''],
+  ['שבילי הארץ','חסר','✓','?','✓','להתקשר'],
+  ['מאפיית השקד','✓','חסר','✓','✓','חודש לא נכון?'],
+  ['סופר הכל פה','✓','מטושטש','חסר','חסר','לבקש שוב'],
+  ['על הדרך – הובלות','חסר','חסר','✓','✓','שלח במייל?'],
+  ['גג בטוח – איטום','✓','✓','✓','✓',''],
+  ['בית ראשון','✓','?','✓','חסר',''],
+  ['חשמל אור ישר','✓','✓','חסר','✓','דף בנק של הפרטי'],
+  ['שווארמה בן ציון','חסר','✓','✓','✓','']
+ ];
+ const head=['','בית העסק','חשבוניות','קבלות','דף בנק','אשראי','הערות'];
+ const t=document.getElementById('grid');
+ const thead=document.createElement('thead'),hr=document.createElement('tr');
+ head.forEach((h,i)=>{const th=document.createElement('th');th.textContent=h;if(!i)th.className='rowno';hr.append(th);});
+ thead.append(hr);t.append(thead);
+ const tb=document.createElement('tbody');
+ rows.forEach((r,i)=>{
+  const tr=document.createElement('tr'),n=document.createElement('td');n.className='rowno';n.textContent=String(i+2);tr.append(n);
+  r.forEach((v,j)=>{const td=document.createElement('td');td.textContent=v;
+   if(j>0&&j<5)td.className=v==='✓'?'ok':v==='?'?'ask':'miss';tr.append(td);});
+  tb.append(tr);
+ });
+ t.append(tb);
+ const show=n=>{for(const s of document.querySelectorAll('.scene'))s.classList.toggle('on',s.id==='s'+n);if(n===2)replay();};
+ const toggleDots=()=>{const d=document.getElementById('dots');d.classList.toggle('off');document.querySelector('#s1 small').textContent=d.classList.contains('off')?'מחובר/ת':'מקליד…';};
+ function replay(){const s=document.getElementById('scroller');s.classList.remove('scroll-run');void s.offsetWidth;s.classList.add('scroll-run');}
+ document.addEventListener('keydown',e=>{
+  if(['1','2','3','4'].includes(e.key))show(Number(e.key));
+  else if(e.key==='t'||e.key==='T'||e.key==='א')toggleDots();
+  else if(e.key==='r'||e.key==='R'||e.key==='ר')replay();
+ });
+ for(const b of document.querySelectorAll('[data-s]'))b.addEventListener('click',()=>show(Number(b.dataset.s)));
+ document.getElementById('t-dots').addEventListener('click',toggleDots);
+ document.getElementById('t-replay').addEventListener('click',replay);
+})();
+</script>
+</body>
+</html>
