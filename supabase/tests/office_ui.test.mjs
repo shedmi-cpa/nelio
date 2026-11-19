@@ -357,7 +357,7 @@ test('log entries read as Hebrew sentences for old and new event names', () => {
  assert.equal(logSettings.who('system',names),'מערכת');
  assert.equal(logSettings.describe({event:'reject',details:'דף בנק: מטושטש'}),'סימן "לא קריא": דף בנק: מטושטש');
  assert.equal(logSettings.describe({event:'office_approve'}),'אישר: בדקתי, תקין');
- assert.equal(logSettings.describe({kind:'message',details:'אישור',status:'simulated'}),'הודעה "אישור" נרשמה (הדגמה, לא נשלחה)');
+ assert.equal(logSettings.describe({kind:'message',details:'אישור',status:'simulated'}),'הודעה "אישור" נשלחה (הדגמה)');
  assert.match(logSettings.describe({event:'office_settings',details:'due_day: 12 → 14'}),/תאריך היעד \(יום בחודש\): 12 → 14/);
  assert.equal(logSettings.describe({event:'cycle_open',details:'נפתח מחזור'}),'נפתח מחזור');
  assert.equal(logSettings.describe({event:'something_new'}),'something_new');
