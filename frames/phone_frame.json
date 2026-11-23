@@ -1,0 +1,14 @@
+{
+ "size": [
+  1584,
+  3120
+ ],
+ "screen_box": [
+  174,
+  174,
+  1236,
+  2772
+ ],
+ "screen_corner_radius": 120,
+ "note": "x, y, width, height in the PNG pixels. The phone shots are 1236 \u00d7 2772, the size of the screen: put them at x=174, y=174, under the frame; the frame hides their corners."
+}

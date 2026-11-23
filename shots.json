@@ -1,0 +1,924 @@
+{
+ "before/s1_owner_question_typing.png": {
+  "scene": "ס1",
+  "size": [
+   3840,
+   2160
+  ],
+  "note": "the owner asks, typing dots on",
+  "boxes": {
+   "question": [
+    1712,
+    1550,
+    580,
+    166
+   ]
+  }
+ },
+ "before/s1_owner_question_typing_phone.png": {
+  "scene": "ס1",
+  "size": [
+   840,
+   1720
+  ],
+  "note": "the same, only the phone",
+  "boxes": {}
+ },
+ "before/s1_owner_question_typing.mp4": {
+  "scene": "ס1",
+  "size": [
+   840,
+   1720
+  ],
+  "seconds": 2.4,
+  "note": "the typing dots move",
+  "boxes": {}
+ },
+ "before/s3_owner_question_no_answer.png": {
+  "scene": "ס3, ס15",
+  "size": [
+   3840,
+   2160
+  ],
+  "note": "the dots are gone: no answer",
+  "boxes": {}
+ },
+ "before/s3_owner_question_no_answer_phone.png": {
+  "scene": "ס3, ס15",
+  "size": [
+   840,
+   1720
+  ],
+  "note": "the same, only the phone",
+  "boxes": {}
+ },
+ "before/s2_clients_chat_scroll.mp4": {
+  "scene": "ס2",
+  "size": [
+   840,
+   1720
+  ],
+  "seconds": 9.0,
+  "note": "the clients chat scrolls up (9 s; speed it up in the edit)",
+  "boxes": {}
+ },
+ "before/s2_clients_chat.png": {
+  "scene": "ס2",
+  "size": [
+   3840,
+   2160
+  ],
+  "note": "the chat at the end of the scroll",
+  "boxes": {}
+ },
+ "before/s2_clients_chat_phone.png": {
+  "scene": "ס2",
+  "size": [
+   840,
+   1720
+  ],
+  "note": "the same, only the phone",
+  "boxes": {}
+ },
+ "before/s2_downloads_folder.png": {
+  "scene": "ס2",
+  "size": [
+   3840,
+   2160
+  ],
+  "note": "the downloads folder, IMG_4471.jpg selected",
+  "boxes": {
+   "img_4471": [
+    742,
+    559,
+    2356,
+    91
+   ]
+  }
+ },
+ "before/s2_downloads_folder_window.png": {
+  "scene": "ס2",
+  "size": [
+   2360,
+   1400
+  ],
+  "note": "the same, only the window",
+  "boxes": {}
+ },
+ "before/s2_tracking_sheet.png": {
+  "scene": "ס2",
+  "size": [
+   3840,
+   2160
+  ],
+  "note": "the tracking sheet with red cells",
+  "boxes": {
+   "david_row": [
+    743,
+    749,
+    2354,
+    66
+   ]
+  }
+ },
+ "before/s2_tracking_sheet_window.png": {
+  "scene": "ס2",
+  "size": [
+   2360,
+   1400
+  ],
+  "note": "the same, only the window",
+  "boxes": {}
+ },
+ "office/s9_board_before.png": {
+  "scene": "ס9",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the board on 11/11 09:00; David (מחשב עד הבית) is \"השלימו חלק\"",
+  "boxes": {
+   "david_row": [
+    480,
+    1040,
+    2240,
+    114
+   ],
+   "summary_cards": [
+    424,
+    -5392,
+    2352,
+    236
+   ]
+  }
+ },
+ "phone/s4_last_day_arrives.mp4": {
+  "scene": "ס4, ס5",
+  "size": [
+   1236,
+   2772
+  ],
+  "seconds": 2.0,
+  "note": "the mail lands: banner from the top, the row slides in",
+  "boxes": {}
+ },
+ "phone/s4_last_day_inbox.png": {
+  "scene": "ס4, ס5",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the inbox with the new mail on top",
+  "boxes": {
+   "new_mail": [
+    0,
+    351,
+    1236,
+    279
+   ]
+  }
+ },
+ "phone/s4_last_day_notification.png": {
+  "scene": "ס4, ס5",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the banner over the inbox",
+  "boxes": {
+   "banner": [
+    30,
+    30,
+    1176,
+    270
+   ]
+  }
+ },
+ "phone/s4_last_day_open.png": {
+  "scene": "ס4, ס5",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the mail opened (the office address is left out: Fiverr)",
+  "boxes": {
+   "subject": [
+    60,
+    156,
+    1116,
+    178
+   ],
+   "button": [
+    589,
+    1028,
+    512,
+    137
+   ]
+  }
+ },
+ "phone/s4_last_day_marked.png": {
+  "scene": "ס4, ס5",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the same, with a highlighter on: עוד חסר: חשבוניות שהוצאתי, קבלות על הוצאות, דף בנק",
+  "boxes": {
+   "marked": [
+    139,
+    842,
+    980,
+    170
+   ]
+  }
+ },
+ "phone/s6_client_page_open.png": {
+  "scene": "ס6",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the personal page opens: the folder, \"חסרים עוד 3\"",
+  "boxes": {
+   "title": [
+    60,
+    276,
+    1116,
+    90
+   ],
+   "subtitle": [
+    60,
+    378,
+    1116,
+    76
+   ],
+   "camera_button": [
+    117,
+    973,
+    888,
+    148
+   ]
+  }
+ },
+ "phone/camera_invoices_look.png": {
+  "scene": "ס7",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the camera, before the shot",
+  "boxes": {}
+ },
+ "phone/camera_invoices_press.png": {
+  "scene": "ס7",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the finger on the button",
+  "boxes": {}
+ },
+ "phone/camera_invoices_flash.mp4": {
+  "scene": "ס7",
+  "size": [
+   1236,
+   2772
+  ],
+  "seconds": 0.5,
+  "note": "the shutter flash",
+  "boxes": {}
+ },
+ "phone/s7_after_first.png": {
+  "scene": "ס7",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the first ✓: חשבוניות שהוצאתי התקבל",
+  "boxes": {
+   "first_row": [
+    75,
+    776,
+    1086,
+    168
+   ]
+  }
+ },
+ "phone/camera_receipts_look.png": {
+  "scene": "ס8",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the camera, before the shot",
+  "boxes": {}
+ },
+ "phone/camera_receipts_press.png": {
+  "scene": "ס8",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the finger on the button",
+  "boxes": {}
+ },
+ "phone/camera_receipts_flash.mp4": {
+  "scene": "ס8",
+  "size": [
+   1236,
+   2772
+  ],
+  "seconds": 0.5,
+  "note": "the shutter flash",
+  "boxes": {}
+ },
+ "phone/s8_after_second.png": {
+  "scene": "ס8",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the second ✓",
+  "boxes": {}
+ },
+ "phone/camera_bank_shaky.mp4": {
+  "scene": "ס8",
+  "size": [
+   1236,
+   2772
+  ],
+  "seconds": 1.5,
+  "note": "the hand shakes on purpose: this is the photo that comes out blurry",
+  "boxes": {}
+ },
+ "phone/camera_bank_look.png": {
+  "scene": "ס8",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the camera, before the shot",
+  "boxes": {}
+ },
+ "phone/camera_bank_press.png": {
+  "scene": "ס8",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the finger on the button",
+  "boxes": {}
+ },
+ "phone/camera_bank_flash.mp4": {
+  "scene": "ס8",
+  "size": [
+   1236,
+   2772
+  ],
+  "seconds": 0.5,
+  "note": "the shutter flash",
+  "boxes": {}
+ },
+ "phone/s8_done_stamp.png": {
+  "scene": "ס8",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the third ✓: \"תודה, קיבלנו הכול\" and the stamp",
+  "boxes": {
+   "title": [
+    60,
+    276,
+    846,
+    90
+   ],
+   "stamp": [
+    937,
+    316,
+    251,
+    251
+   ]
+  }
+ },
+ "phone/s8_done_stamp.mp4": {
+  "scene": "ס8",
+  "size": [
+   1236,
+   2772
+  ],
+  "seconds": 1.6,
+  "note": "the stamp lands (the page's own movement)",
+  "boxes": {}
+ },
+ "office/s9_board_waiting.png": {
+  "scene": "ס9",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "after the upload: David is \"ממתין לבדיקה\"",
+  "boxes": {
+   "david_row": [
+    480,
+    1286,
+    2240,
+    113
+   ],
+   "summary_cards": [
+    424,
+    -6286,
+    2352,
+    236
+   ]
+  }
+ },
+ "office/s9_board_waiting_as_before.png": {
+  "scene": "ס9",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the same frame, with David's row as it was before the upload (for the change in place)",
+  "boxes": {
+   "david_row": [
+    480,
+    1286,
+    2240,
+    113
+   ]
+  }
+ },
+ "office/s9_board_waiting_glow.png": {
+  "scene": "ס9",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "after the upload: David is \"ממתין לבדיקה\" (David's row lit)",
+  "boxes": {
+   "david_row": [
+    480,
+    1286,
+    2240,
+    113
+   ]
+  }
+ },
+ "office/s10_settings_quiet_hours.png": {
+  "scene": "ס10",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "הגדרות: שעות שקט. Circle \"שישי וערב חג, מהשעה 13:00\"",
+  "boxes": {
+   "quiet_hours": [
+    480,
+    600,
+    1104,
+    594
+   ],
+   "friday_line": [
+    498,
+    1041,
+    1068,
+    139
+   ]
+  }
+ },
+ "office/s10_alt_demo_plan.png": {
+  "scene": "(reference)",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "מצב הדגמה: the plan of the month, for reference only (no step moved this month, so it does not show Shabbat; use the settings shot)",
+  "boxes": {}
+ },
+ "office/s11_drawer_files.png": {
+  "scene": "ס11",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "David's folder: every file with its new name: מחשב-עד-הבית_2026-10_דף-בנק_01.jpg",
+  "boxes": {
+   "bank_file_name": [
+    2632,
+    1682,
+    526,
+    64
+   ],
+   "files": [
+    2214,
+    873,
+    936,
+    1414
+   ]
+  }
+ },
+ "office/s11_drawer_files_before_rename.png": {
+  "scene": "ס11",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the same frame with the name the photo came with (IMG_4471.jpg), for the crossfade",
+  "boxes": {
+   "bank_file_name": [
+    2963,
+    1682,
+    195,
+    64
+   ]
+  }
+ },
+ "office/s12_preview_blurry.png": {
+  "scene": "ס12",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the bank statement in the preview: blurry",
+  "boxes": {
+   "preview": [
+    56,
+    221,
+    2048,
+    1435
+   ]
+  }
+ },
+ "office/s12_preview_blurry_large.png": {
+  "scene": "ס12",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the same, enlarged",
+  "boxes": {
+   "document": [
+    1094,
+    217,
+    1012,
+    1350
+   ]
+  }
+ },
+ "office/s13_unreadable_button.png": {
+  "scene": "ס13",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the button \"לא קריא…\" (mouse on it)",
+  "boxes": {
+   "button": [
+    2202,
+    1660,
+    209,
+    108
+   ]
+  }
+ },
+ "office/s13_unreadable_dialog.png": {
+  "scene": "ס13",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the dialog: reason \"התמונה מטושטשת\" and the message to the client",
+  "boxes": {
+   "dialog": [
+    1040,
+    288,
+    1120,
+    1223
+   ],
+   "send": [
+    1755,
+    1358,
+    371,
+    124
+   ]
+  }
+ },
+ "office/s13_after_unreadable.png": {
+  "scene": "ס13",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "marked: the file is \"(נדחה)\" and the request to photograph again went out",
+  "boxes": {}
+ },
+ "phone/s14_again_arrives.mp4": {
+  "scene": "ס14",
+  "size": [
+   1236,
+   2772
+  ],
+  "seconds": 2.0,
+  "note": "the mail lands: banner from the top, the row slides in",
+  "boxes": {}
+ },
+ "phone/s14_again_inbox.png": {
+  "scene": "ס14",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the inbox with the new mail on top",
+  "boxes": {
+   "new_mail": [
+    0,
+    351,
+    1236,
+    279
+   ]
+  }
+ },
+ "phone/s14_again_notification.png": {
+  "scene": "ס14",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the banner over the inbox",
+  "boxes": {
+   "banner": [
+    30,
+    30,
+    1176,
+    270
+   ]
+  }
+ },
+ "phone/s14_again_open.png": {
+  "scene": "ס14",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the mail opened (the office address is left out: Fiverr)",
+  "boxes": {
+   "subject": [
+    60,
+    156,
+    1116,
+    89
+   ],
+   "button": [
+    589,
+    939,
+    512,
+    137
+   ]
+  }
+ },
+ "phone/s14_client_page_again.png": {
+  "scene": "ס14",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the page: דף בנק is \"לא קריא\", with the reason",
+  "boxes": {
+   "bank_row": [
+    75,
+    984,
+    1086,
+    943
+   ]
+  }
+ },
+ "phone/camera_bank_again_look.png": {
+  "scene": "ס14",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the camera, before the shot",
+  "boxes": {}
+ },
+ "phone/camera_bank_again_press.png": {
+  "scene": "ס14",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the finger on the button",
+  "boxes": {}
+ },
+ "phone/camera_bank_again_flash.mp4": {
+  "scene": "ס14",
+  "size": [
+   1236,
+   2772
+  ],
+  "seconds": 0.5,
+  "note": "the shutter flash",
+  "boxes": {}
+ },
+ "phone/s14_done_again.png": {
+  "scene": "ס14",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the bank statement again ✓, everything received",
+  "boxes": {}
+ },
+ "office/s14_approve_button.png": {
+  "scene": "ס14",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the folder with the new photo; \"בדקתי, תקין\"",
+  "boxes": {
+   "button": [
+    2917,
+    418,
+    245,
+    108
+   ]
+  }
+ },
+ "office/s14_preview_sharp.png": {
+  "scene": "ס14",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the new photo of the bank statement: sharp",
+  "boxes": {}
+ },
+ "office/s14_done.png": {
+  "scene": "ס14",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "approved: \"הושלם\"",
+  "boxes": {
+   "status": [
+    2214,
+    255,
+    936,
+    54
+   ]
+  }
+ },
+ "office/s14_board_done.png": {
+  "scene": "ס14",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the board: David is \"הושלם\"",
+  "boxes": {
+   "david_row": [
+    480,
+    1286,
+    2240,
+    113
+   ],
+   "summary_cards": [
+    424,
+    -6286,
+    2352,
+    236
+   ]
+  }
+ },
+ "office/s14_board_done_glow.png": {
+  "scene": "ס14",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the board: David is \"הושלם\" (David's row lit)",
+  "boxes": {
+   "david_row": [
+    480,
+    1286,
+    2240,
+    113
+   ]
+  }
+ },
+ "owner/s15_summary_arrives.mp4": {
+  "scene": "ס15",
+  "size": [
+   1236,
+   2772
+  ],
+  "seconds": 2.0,
+  "note": "the mail lands: banner from the top, the row slides in",
+  "boxes": {}
+ },
+ "owner/s15_summary_inbox.png": {
+  "scene": "ס15",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the inbox with the new mail on top",
+  "boxes": {
+   "new_mail": [
+    0,
+    351,
+    1236,
+    279
+   ]
+  }
+ },
+ "owner/s15_summary_notification.png": {
+  "scene": "ס15",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the banner over the inbox",
+  "boxes": {
+   "banner": [
+    30,
+    30,
+    1176,
+    270
+   ]
+  }
+ },
+ "owner/s15_summary_open.png": {
+  "scene": "ס15",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the mail opened (the office address is left out: Fiverr)",
+  "boxes": {
+   "subject": [
+    60,
+    156,
+    1116,
+    89
+   ]
+  }
+ },
+ "owner/s15_summary_marked1.png": {
+  "scene": "ס15",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the same, with a highlighter on: סיכום אוקטובר 2026: 49 מתוך 60 לקוחות שלחו את כל המסמכים, ו־36 מהם כבר נבדקו.",
+  "boxes": {
+   "marked": [
+    112,
+    676,
+    1007,
+    170
+   ]
+  }
+ },
+ "owner/s15_summary_marked2.png": {
+  "scene": "ס15",
+  "size": [
+   1236,
+   2772
+  ],
+  "note": "the same, with a highlighter on: עוד לא השלימו (11): הפקות שמחה גדולה, זורם – אינסטלציה, ליאור אימון אישי, מסעדת הגפן בע״מ, סופר הכל פה בע״מ, סטודיו קו ונקודה, על הדרך – הובלות בע״מ, צומת החלטות – ייעוץ עסקי בע״מ, צעד קדימה – אימון עסקי, קפה הקשת ועוד 1.",
+  "boxes": {
+   "marked": [
+    113,
+    829,
+    1006,
+    477
+   ]
+  }
+ },
+ "office/s15_board_friday.png": {
+  "scene": "ס15",
+  "size": [
+   3200,
+   1800
+  ],
+  "note": "the board on Friday 13/11, for reference",
+  "boxes": {
+   "david_row": [
+    480,
+    1286,
+    2240,
+    113
+   ],
+   "summary_cards": [
+    424,
+    -6286,
+    2352,
+    236
+   ]
+  }
+ }
+}
