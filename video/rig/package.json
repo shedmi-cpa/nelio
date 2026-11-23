@@ -1,0 +1,10 @@
+{
+  "name": "nelio-video-rig",
+  "private": true,
+  "description": "Local tools that photograph the Nelio screens for the video. Nothing here is deployed.",
+  "dependencies": {
+    "@fontsource/bellefair": "^5.2.0",
+    "@fontsource/frank-ruhl-libre": "^5.2.0",
+    "pg": "^8.13.0"
+  }
+}

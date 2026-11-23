@@ -16,3 +16,7 @@ private-migration/
 
 __pycache__/
 *.pyc
+
+# The video rig's local work (database, storage, generated pages); its output lives on the video-assets branch
+video/rig/work/
+video/rig/pages/
